@@ -24,6 +24,12 @@ namespace Driver_Manager_Windows_10_11
             new List<DriverStoreModel>();
 
         // =========================================================
+        // Printer Drivers
+        // =========================================================
+        private List<PrinterDriverModel> allPrinterDrivers =
+            new List<PrinterDriverModel>();
+
+        // =========================================================
         // Current Page
         // =========================================================
         private string currentPage = "System Drivers";
@@ -39,8 +45,13 @@ namespace Driver_Manager_Windows_10_11
 
             SetActiveButton(btnSystemDrivers);
 
+            // เปิดรายละเอียด Printer Driver เมื่อดับเบิลคลิกแถว
+            dgvDrivers.CellDoubleClick += dgvDrivers_CellDoubleClick;
+
             Shown += async (sender, e) =>
             {
+                ConfigureSystemGrid();
+
                 await LoadSystemDriversAsync();
             };
         }
@@ -102,7 +113,7 @@ namespace Driver_Manager_Windows_10_11
         // =========================================================
         // PRINTER DRIVERS
         // =========================================================
-        private void btnPrinterDrivers_Click(
+        private async void btnPrinterDrivers_Click(
             object sender,
             EventArgs e)
         {
@@ -123,10 +134,7 @@ namespace Driver_Manager_Windows_10_11
 
             ConfigurePrinterGrid();
 
-            dgvDrivers.Rows.Clear();
-
-            lblStatus.Text =
-                "Printer Drivers    Ready";
+            await LoadPrinterDriversAsync();
         }
 
         // =========================================================
@@ -137,25 +145,46 @@ namespace Driver_Manager_Windows_10_11
             dgvDrivers.Columns.Clear();
 
             dgvDrivers.Columns.Add(
-                CreateColumn("colDevice", "Device", 180));
+                CreateColumn(
+                    "colDevice",
+                    "Device",
+                    180));
 
             dgvDrivers.Columns.Add(
-                CreateColumn("colManufacturer", "Manufacturer", 100));
+                CreateColumn(
+                    "colManufacturer",
+                    "Manufacturer",
+                    100));
 
             dgvDrivers.Columns.Add(
-                CreateColumn("colVersion", "Driver Version", 90));
+                CreateColumn(
+                    "colVersion",
+                    "Driver Version",
+                    90));
 
             dgvDrivers.Columns.Add(
-                CreateColumn("colDate", "Driver Date", 80));
+                CreateColumn(
+                    "colDate",
+                    "Driver Date",
+                    80));
 
             dgvDrivers.Columns.Add(
-                CreateColumn("colInf", "INF Name", 80));
+                CreateColumn(
+                    "colInf",
+                    "INF Name",
+                    80));
 
             dgvDrivers.Columns.Add(
-                CreateColumn("colStatus", "Status", 70));
+                CreateColumn(
+                    "colStatus",
+                    "Status",
+                    70));
 
             dgvDrivers.Columns.Add(
-                CreateColumn("colSigned", "Signed", 60));
+                CreateColumn(
+                    "colSigned",
+                    "Signed",
+                    60));
         }
 
         // =========================================================
@@ -209,7 +238,7 @@ namespace Driver_Manager_Windows_10_11
         }
 
         // =========================================================
-        // PRINTER GRID
+        // PRINTER DRIVER GRID
         // =========================================================
         private void ConfigurePrinterGrid()
         {
@@ -219,41 +248,78 @@ namespace Driver_Manager_Windows_10_11
                 CreateColumn(
                     "colName",
                     "Driver Name",
-                    150));
+                    180));
 
             dgvDrivers.Columns.Add(
                 CreateColumn(
                     "colManufacturer",
-                    "Manufacturer",
-                    100));
+                    "Provider",
+                    90));
 
             dgvDrivers.Columns.Add(
                 CreateColumn(
                     "colVersion",
-                    "Version",
-                    90));
+                    "Type",
+                    65));
 
             dgvDrivers.Columns.Add(
                 CreateColumn(
                     "colInf",
                     "INF",
-                    90));
+                    100));
 
             dgvDrivers.Columns.Add(
                 CreateColumn(
                     "colPath",
                     "Driver Path",
-                    180));
+                    190));
 
             dgvDrivers.Columns.Add(
                 CreateColumn(
                     "colEnvironment",
-                    "Environment",
-                    100));
+                    "Architecture",
+                    90));
+
+            dgvDrivers.Columns.Add(
+                CreateColumn(
+                    "colStatus",
+                    "Status",
+                    80));
+
+            // =========================================================
+            // Alignment
+            // =========================================================
+            dgvDrivers.Columns["colName"]!
+                .DefaultCellStyle.Alignment =
+                DataGridViewContentAlignment.MiddleLeft;
+
+            dgvDrivers.Columns["colManufacturer"]!
+                .DefaultCellStyle.Alignment =
+                DataGridViewContentAlignment.MiddleLeft;
+
+            dgvDrivers.Columns["colVersion"]!
+                .DefaultCellStyle.Alignment =
+                DataGridViewContentAlignment.MiddleCenter;
+
+            dgvDrivers.Columns["colInf"]!
+                .DefaultCellStyle.Alignment =
+                DataGridViewContentAlignment.MiddleLeft;
+
+            dgvDrivers.Columns["colPath"]!
+                .DefaultCellStyle.Alignment =
+                DataGridViewContentAlignment.MiddleLeft;
+
+            dgvDrivers.Columns["colEnvironment"]!
+                .DefaultCellStyle.Alignment =
+                DataGridViewContentAlignment.MiddleCenter;
+
+            dgvDrivers.Columns["colStatus"]!
+                .DefaultCellStyle.Alignment =
+                DataGridViewContentAlignment.MiddleCenter;
         }
 
         // =========================================================
-        // Create Grid Column
+        // Create Column
         // =========================================================
         private DataGridViewTextBoxColumn CreateColumn(
             string name,
@@ -272,7 +338,7 @@ namespace Driver_Manager_Windows_10_11
         }
 
         // =========================================================
-        // LOAD SYSTEM DRIVER
+        // LOAD SYSTEM DRIVERS
         // =========================================================
         private async Task LoadSystemDriversAsync()
         {
@@ -408,6 +474,100 @@ namespace Driver_Manager_Windows_10_11
         }
 
         // =========================================================
+        // LOAD PRINTER DRIVERS
+        // =========================================================
+        private async Task LoadPrinterDriversAsync()
+        {
+            if (isLoading)
+                return;
+
+            isLoading = true;
+
+            try
+            {
+                Cursor = Cursors.WaitCursor;
+
+                btnRefresh.Enabled = false;
+                txtSearch.Enabled = false;
+
+                lblStatus.Text =
+                    "Loading printer drivers...";
+
+                allPrinterDrivers =
+                    await Task.Run(() =>
+                        PrinterDriverService.GetDrivers());
+
+                dgvDrivers.Rows.Clear();
+
+                foreach (PrinterDriverModel driver
+                    in allPrinterDrivers)
+                {
+                    int row =
+                        dgvDrivers.Rows.Add(
+                            driver.Name,
+                            driver.Provider,
+                            driver.Version,
+                            driver.InfName,
+                            driver.DriverPath,
+                            driver.SupportedPlatform,
+                            driver.Status);
+
+                    dgvDrivers.Rows[row].Tag =
+                        driver;
+                }
+
+                // =====================================================
+                // จัดสี Status
+                // =====================================================
+                foreach (DataGridViewRow row
+                    in dgvDrivers.Rows)
+                {
+                    string status =
+                        row.Cells["colStatus"]
+                            .Value?.ToString() ?? "";
+
+                    if (status.Equals(
+                        "Installed",
+                        StringComparison.OrdinalIgnoreCase))
+                    {
+                        row.Cells["colStatus"]
+                            .Style.ForeColor =
+                            Color.FromArgb(22, 163, 74);
+                    }
+                    else
+                    {
+                        row.Cells["colStatus"]
+                            .Style.ForeColor =
+                            Color.FromArgb(220, 38, 38);
+                    }
+                }
+
+                lblStatus.Text =
+                    $"Printer Drivers    {allPrinterDrivers.Count} drivers";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    ex.Message,
+                    "Driver Manager",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+
+                lblStatus.Text =
+                    "Failed to load printer drivers";
+            }
+            finally
+            {
+                btnRefresh.Enabled = true;
+                txtSearch.Enabled = true;
+
+                Cursor = Cursors.Default;
+
+                isLoading = false;
+            }
+        }
+
+        // =========================================================
         // REFRESH
         // =========================================================
         private async void btnRefresh_Click(
@@ -427,10 +587,10 @@ namespace Driver_Manager_Windows_10_11
             {
                 await LoadDriverStoreAsync();
             }
-            else
+            else if (currentPage ==
+                     "Printer Drivers")
             {
-                lblStatus.Text =
-                    "Printer Drivers    Refresh";
+                await LoadPrinterDriversAsync();
             }
         }
 
@@ -453,80 +613,98 @@ namespace Driver_Manager_Windows_10_11
                 if (row.IsNewRow)
                     continue;
 
-                bool found;
+                bool found = false;
 
+                // =====================================================
+                // SYSTEM DRIVER
+                // =====================================================
                 if (currentPage ==
                     "System Drivers")
                 {
                     SystemDriverModel? driver =
                         row.Tag as SystemDriverModel;
 
-                    string searchText =
-                        driver == null
-                            ? ""
-                            : $"{driver.Device} " +
-                              $"{driver.Manufacturer} " +
-                              $"{driver.DriverVersion} " +
-                              $"{driver.DriverDate} " +
-                              $"{driver.InfName} " +
-                              $"{driver.Status} " +
-                              $"{driver.Signed} " +
-                              $"{driver.DeviceId} " +
-                              $"{driver.DriverName} " +
-                              $"{driver.DeviceClass} " +
-                              $"{driver.Location}";
+                    if (driver != null)
+                    {
+                        string searchText =
+                            $"{driver.Device} " +
+                            $"{driver.Manufacturer} " +
+                            $"{driver.DriverVersion} " +
+                            $"{driver.DriverDate} " +
+                            $"{driver.InfName} " +
+                            $"{driver.Status} " +
+                            $"{driver.Signed} " +
+                            $"{driver.DeviceId} " +
+                            $"{driver.DriverName} " +
+                            $"{driver.DeviceClass} " +
+                            $"{driver.Location}";
 
-                    found =
-                        string.IsNullOrWhiteSpace(keyword) ||
-                        searchText.Contains(
-                            keyword,
-                            StringComparison.OrdinalIgnoreCase);
+                        found =
+                            string.IsNullOrWhiteSpace(keyword) ||
+                            searchText.Contains(
+                                keyword,
+                                StringComparison.OrdinalIgnoreCase);
+                    }
                 }
+
+                // =====================================================
+                // DRIVER STORE
+                // =====================================================
                 else if (currentPage ==
                          "Driver Store")
                 {
                     DriverStoreModel? driver =
                         row.Tag as DriverStoreModel;
 
-                    string searchText =
-                        driver == null
-                            ? ""
-                            : $"{driver.PublishedName} " +
-                              $"{driver.OriginalName} " +
-                              $"{driver.ProviderName} " +
-                              $"{driver.ClassName} " +
-                              $"{driver.Version} " +
-                              $"{driver.Date} " +
-                              $"{driver.SignerName} " +
-                              $"{driver.ClassGuid}";
-
-                    found =
-                        string.IsNullOrWhiteSpace(keyword) ||
-                        searchText.Contains(
-                            keyword,
-                            StringComparison.OrdinalIgnoreCase);
-                }
-                else
-                {
-                    found = true;
-
-                    if (!string.IsNullOrWhiteSpace(keyword))
+                    if (driver != null)
                     {
-                        foreach (DataGridViewCell cell
-                            in row.Cells)
-                        {
-                            if (cell.Value != null &&
-                                cell.Value.ToString()!
-                                    .Contains(
-                                        keyword,
-                                        StringComparison.OrdinalIgnoreCase))
-                            {
-                                found = true;
-                                break;
-                            }
+                        string searchText =
+                            $"{driver.PublishedName} " +
+                            $"{driver.OriginalName} " +
+                            $"{driver.ProviderName} " +
+                            $"{driver.ClassName} " +
+                            $"{driver.Version} " +
+                            $"{driver.Date} " +
+                            $"{driver.SignerName} " +
+                            $"{driver.ClassGuid}";
 
-                            found = false;
-                        }
+                        found =
+                            string.IsNullOrWhiteSpace(keyword) ||
+                            searchText.Contains(
+                                keyword,
+                                StringComparison.OrdinalIgnoreCase);
+                    }
+                }
+
+                // =====================================================
+                // PRINTER DRIVER
+                // =====================================================
+                else if (currentPage ==
+                         "Printer Drivers")
+                {
+                    PrinterDriverModel? driver =
+                        row.Tag as PrinterDriverModel;
+
+                    if (driver != null)
+                    {
+                        string searchText =
+                            $"{driver.Name} " +
+                            $"{driver.Provider} " +
+                            $"{driver.Version} " +
+                            $"{driver.InfName} " +
+                            $"{driver.DriverPath} " +
+                            $"{driver.FilePath} " +
+                            $"{driver.DataFile} " +
+                            $"{driver.ConfigFile} " +
+                            $"{driver.MonitorName} " +
+                            $"{driver.SupportedPlatform} " +
+                            $"{driver.Status}";
+
+                        found =
+                            string.IsNullOrWhiteSpace(keyword) ||
+                            searchText.Contains(
+                                keyword,
+                                StringComparison.OrdinalIgnoreCase);
                     }
                 }
 
@@ -541,7 +719,38 @@ namespace Driver_Manager_Windows_10_11
         }
 
         // =========================================================
-        // ACTIVE MENU
+        // PRINTER DRIVER DETAILS
+        // =========================================================
+        private void dgvDrivers_CellDoubleClick(
+            object sender,
+            DataGridViewCellEventArgs e)
+        {
+            // ไม่ทำงานเมื่อดับเบิลคลิก Header
+            if (e.RowIndex < 0)
+                return;
+
+            // ทำงานเฉพาะหน้า Printer Drivers
+            if (currentPage != "Printer Drivers")
+                return;
+
+            if (e.RowIndex >= dgvDrivers.Rows.Count)
+                return;
+
+            if (dgvDrivers.Rows[e.RowIndex].Tag
+                is not PrinterDriverModel driver)
+            {
+                return;
+            }
+
+            using (var detailsForm =
+                new PrinterDriverDetailsForm(driver))
+            {
+                detailsForm.ShowDialog(this);
+            }
+        }
+
+        // =========================================================
+        // ACTIVE BUTTON
         // =========================================================
         private void SetActiveButton(
             Button activeButton)
@@ -567,6 +776,11 @@ namespace Driver_Manager_Windows_10_11
 
             activeButton.ForeColor =
                 Color.White;
+        }
+
+        private void MainForm_Load(object sender, EventArgs e)
+        {
+
         }
     }
 }
