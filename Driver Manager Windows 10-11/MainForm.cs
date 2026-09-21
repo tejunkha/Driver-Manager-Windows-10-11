@@ -30,6 +30,12 @@ namespace Driver_Manager_Windows_10_11
             new List<PrinterDriverModel>();
 
         // =========================================================
+        // Ghost Printers
+        // =========================================================
+        private List<GhostPrinterModel> allGhostPrinters =
+            new List<GhostPrinterModel>();
+
+        // =========================================================
         // Current Page
         // =========================================================
         private string currentPage = "System Drivers";
@@ -42,6 +48,8 @@ namespace Driver_Manager_Windows_10_11
         public MainForm()
         {
             InitializeComponent();
+
+            HideGhostEmptyState();
 
             SetActiveButton(btnSystemDrivers);
 
@@ -68,6 +76,8 @@ namespace Driver_Manager_Windows_10_11
 
             currentPage = "System Drivers";
 
+            HideGhostEmptyState();
+
             SetActiveButton(btnSystemDrivers);
 
             lblPageTitle.Text =
@@ -77,6 +87,7 @@ namespace Driver_Manager_Windows_10_11
                 "View installed system device drivers";
 
             txtSearch.Clear();
+            txtSearch.PlaceholderText = "Search driver...";
 
             ConfigureSystemGrid();
 
@@ -95,6 +106,8 @@ namespace Driver_Manager_Windows_10_11
 
             currentPage = "Driver Store";
 
+            HideGhostEmptyState();
+
             SetActiveButton(btnDriverStore);
 
             lblPageTitle.Text =
@@ -104,6 +117,7 @@ namespace Driver_Manager_Windows_10_11
                 "View driver packages stored in Windows";
 
             txtSearch.Clear();
+            txtSearch.PlaceholderText = "Search driver package...";
 
             ConfigureDriverStoreGrid();
 
@@ -122,6 +136,8 @@ namespace Driver_Manager_Windows_10_11
 
             currentPage = "Printer Drivers";
 
+            HideGhostEmptyState();
+
             SetActiveButton(btnPrinterDrivers);
 
             lblPageTitle.Text =
@@ -135,6 +151,37 @@ namespace Driver_Manager_Windows_10_11
             ConfigurePrinterGrid();
 
             await LoadPrinterDriversAsync();
+        }
+
+        // =========================================================
+        // GHOST PRINTERS
+        // =========================================================
+        private async void btnGhostPrinter_Click(
+            object sender,
+            EventArgs e)
+        {
+            if (isLoading)
+                return;
+
+            currentPage = "Ghost Printer";
+
+            HideGhostEmptyState();
+
+            SetActiveButton(btnGhostPrinter);
+
+            lblPageTitle.Text =
+                "Ghost Printer";
+
+            lblPageDescription.Text =
+                "View non-present printer devices";
+
+            txtSearch.Clear();
+            txtSearch.PlaceholderText =
+                "Search ghost printer...";
+
+            ConfigureGhostPrinterGrid();
+
+            await LoadGhostPrintersAsync();
         }
 
         // =========================================================
@@ -316,6 +363,50 @@ namespace Driver_Manager_Windows_10_11
             dgvDrivers.Columns["colStatus"]!
                 .DefaultCellStyle.Alignment =
                 DataGridViewContentAlignment.MiddleCenter;
+        }
+
+        // =========================================================
+        // GHOST PRINTER GRID
+        // =========================================================
+        private void ConfigureGhostPrinterGrid()
+        {
+            dgvDrivers.Columns.Clear();
+
+            dgvDrivers.Columns.Add(
+                CreateColumn(
+                    "colName",
+                    "Printer Name",
+                    150));
+
+            dgvDrivers.Columns.Add(
+                CreateColumn(
+                    "colDeviceId",
+                    "Device ID",
+                    200));
+
+            dgvDrivers.Columns.Add(
+                CreateColumn(
+                    "colManufacturer",
+                    "Manufacturer",
+                    100));
+
+            dgvDrivers.Columns.Add(
+                CreateColumn(
+                    "colClassGuid",
+                    "Class",
+                    90));
+
+            dgvDrivers.Columns.Add(
+                CreateColumn(
+                    "colStatus",
+                    "Status",
+                    90));
+
+            dgvDrivers.Columns.Add(
+                CreateColumn(
+                    "colProblem",
+                    "Problem Code",
+                    80));
         }
 
         // =========================================================
@@ -568,6 +659,88 @@ namespace Driver_Manager_Windows_10_11
         }
 
         // =========================================================
+        // LOAD GHOST PRINTERS
+        // =========================================================
+        private async Task LoadGhostPrintersAsync()
+        {
+            if (isLoading)
+                return;
+
+            isLoading = true;
+
+            try
+            {
+                Cursor = Cursors.WaitCursor;
+
+                btnRefresh.Enabled = false;
+                txtSearch.Enabled = false;
+
+                lblStatus.Text =
+                    "Loading ghost printers...";
+
+                allGhostPrinters =
+                    await Task.Run(() =>
+                        GhostPrinterService.GetGhostPrinters());
+
+                dgvDrivers.Rows.Clear();
+
+                foreach (GhostPrinterModel printer
+                    in allGhostPrinters)
+                {
+                    int row =
+                        dgvDrivers.Rows.Add(
+                            printer.Name,
+                            printer.DeviceId,
+                            printer.Manufacturer,
+                            printer.ClassGuid,
+                            printer.Status,
+                            printer.ProblemCode);
+
+                    dgvDrivers.Rows[row].Tag = printer;
+
+                    dgvDrivers.Rows[row]
+                        .Cells["colStatus"]
+                        .Style.ForeColor =
+                        Color.FromArgb(220, 38, 38);
+                }
+
+                if (allGhostPrinters.Count == 0)
+                {
+                    ShowGhostEmptyState();
+                }
+                else
+                {
+                    HideGhostEmptyState();
+                }
+
+                lblStatus.Text =
+                    allGhostPrinters.Count == 0
+                        ? "Ghost Printer    No disconnected printers"
+                        : $"Ghost Printer    {allGhostPrinters.Count} items";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    ex.Message,
+                    "Driver Manager",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+
+                lblStatus.Text =
+                    "Failed to load ghost printers";
+            }
+            finally
+            {
+                btnRefresh.Enabled = true;
+                txtSearch.Enabled = true;
+
+                Cursor = Cursors.Default;
+
+                isLoading = false;
+            }
+        }
+
+        // =========================================================
         // REFRESH
         // =========================================================
         private async void btnRefresh_Click(
@@ -591,6 +764,11 @@ namespace Driver_Manager_Windows_10_11
                      "Printer Drivers")
             {
                 await LoadPrinterDriversAsync();
+            }
+            else if (currentPage ==
+                     "Ghost Printer")
+            {
+                await LoadGhostPrintersAsync();
             }
         }
 
@@ -708,6 +886,34 @@ namespace Driver_Manager_Windows_10_11
                     }
                 }
 
+                // =====================================================
+                // GHOST PRINTER
+                // =====================================================
+                else if (currentPage ==
+                         "Ghost Printer")
+                {
+                    GhostPrinterModel? printer =
+                        row.Tag as GhostPrinterModel;
+
+                    if (printer != null)
+                    {
+                        string searchText =
+                            $"{printer.Name} " +
+                            $"{printer.DeviceId} " +
+                            $"{printer.Manufacturer} " +
+                            $"{printer.ClassGuid} " +
+                            $"{printer.Status} " +
+                            $"{printer.ProblemCode} " +
+                            $"{printer.Description}";
+
+                        found =
+                            string.IsNullOrWhiteSpace(keyword) ||
+                            searchText.Contains(
+                                keyword,
+                                StringComparison.OrdinalIgnoreCase);
+                    }
+                }
+
                 row.Visible = found;
 
                 if (found)
@@ -716,6 +922,32 @@ namespace Driver_Manager_Windows_10_11
 
             lblStatus.Text =
                 $"{currentPage}    {visibleCount} / {totalCount}";
+        }
+
+        // =========================================================
+        // GHOST PRINTER EMPTY STATE
+        // =========================================================
+        private void ShowGhostEmptyState()
+        {
+            if (currentPage != "Ghost Printer")
+                return;
+
+            lblGhostEmptyTitle.Text =
+                "No Ghost Printer Found";
+
+            lblGhostEmptyDescription.Text =
+                "No disconnected printer devices detected.";
+
+            pnlGhostEmptyState.Visible = true;
+            pnlGhostEmptyState.BringToFront();
+        }
+
+        private void HideGhostEmptyState()
+        {
+            if (pnlGhostEmptyState == null)
+                return;
+
+            pnlGhostEmptyState.Visible = false;
         }
 
         // =========================================================
@@ -759,7 +991,8 @@ namespace Driver_Manager_Windows_10_11
             {
                 btnSystemDrivers,
                 btnDriverStore,
-                btnPrinterDrivers
+                btnPrinterDrivers,
+                btnGhostPrinter
             };
 
             foreach (Button button in buttons)
@@ -778,9 +1011,5 @@ namespace Driver_Manager_Windows_10_11
                 Color.White;
         }
 
-        private void MainForm_Load(object sender, EventArgs e)
-        {
-
-        }
     }
 }
