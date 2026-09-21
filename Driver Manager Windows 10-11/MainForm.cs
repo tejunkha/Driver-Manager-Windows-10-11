@@ -36,6 +36,12 @@ namespace Driver_Manager_Windows_10_11
             new List<GhostPrinterModel>();
 
         // =========================================================
+        // Printer Ports
+        // =========================================================
+        private List<PrinterPortModel> allPrinterPorts =
+            new List<PrinterPortModel>();
+
+        // =========================================================
         // Current Page
         // =========================================================
         private string currentPage = "";
@@ -53,6 +59,9 @@ namespace Driver_Manager_Windows_10_11
 
             // เปิดรายละเอียดเมื่อดับเบิลคลิกแถว
             dgvDrivers.CellDoubleClick += dgvDrivers_CellDoubleClick;
+
+            // Printer Ports
+            btnPrinterPorts.Click += btnPrinterPorts_Click;
 
             // =====================================================
             // Startup: ยังไม่เลือกเมนูใด
@@ -171,6 +180,37 @@ namespace Driver_Manager_Windows_10_11
             ConfigurePrinterGrid();
 
             await LoadPrinterDriversAsync();
+        }
+
+        // =========================================================
+        // PRINTER PORTS
+        // =========================================================
+        private async void btnPrinterPorts_Click(
+            object sender,
+            EventArgs e)
+        {
+            if (isLoading)
+                return;
+
+            currentPage = "Printer Ports";
+
+            HideGhostPrinterStatus();
+
+            SetActiveButton(btnPrinterPorts);
+
+            lblPageTitle.Text =
+                "Printer Ports";
+
+            lblPageDescription.Text =
+                "View installed printer ports";
+
+            txtSearch.Clear();
+            txtSearch.PlaceholderText =
+                "Search printer port...";
+
+            ConfigurePrinterPortGrid();
+
+            await LoadPrinterPortsAsync();
         }
 
         // =========================================================
@@ -386,6 +426,62 @@ namespace Driver_Manager_Windows_10_11
             dgvDrivers.Columns["colStatus"]!
                 .DefaultCellStyle.Alignment =
                 DataGridViewContentAlignment.MiddleCenter;
+        }
+
+        // =========================================================
+        // PRINTER PORT GRID
+        // =========================================================
+        private void ConfigurePrinterPortGrid()
+        {
+            dgvDrivers.Columns.Clear();
+
+            dgvDrivers.Columns.Add(
+                CreateColumn(
+                    "colName",
+                    "Port Name",
+                    150));
+
+            dgvDrivers.Columns.Add(
+                CreateColumn(
+                    "colDescription",
+                    "Description",
+                    150));
+
+            dgvDrivers.Columns.Add(
+                CreateColumn(
+                    "colHost",
+                    "Host Address",
+                    130));
+
+            dgvDrivers.Columns.Add(
+                CreateColumn(
+                    "colPortNumber",
+                    "Port Number",
+                    80));
+
+            dgvDrivers.Columns.Add(
+                CreateColumn(
+                    "colProtocol",
+                    "Protocol",
+                    80));
+
+            dgvDrivers.Columns.Add(
+                CreateColumn(
+                    "colSNMP",
+                    "SNMP",
+                    70));
+
+            dgvDrivers.Columns.Add(
+                CreateColumn(
+                    "colMonitor",
+                    "Port Monitor",
+                    120));
+
+            dgvDrivers.Columns.Add(
+                CreateColumn(
+                    "colComputer",
+                    "Computer",
+                    100));
         }
 
         // =========================================================
@@ -682,6 +778,74 @@ namespace Driver_Manager_Windows_10_11
         }
 
         // =========================================================
+        // LOAD PRINTER PORTS
+        // =========================================================
+        private async Task LoadPrinterPortsAsync()
+        {
+            if (isLoading)
+                return;
+
+            isLoading = true;
+
+            try
+            {
+                Cursor = Cursors.WaitCursor;
+
+                btnRefresh.Enabled = false;
+                txtSearch.Enabled = false;
+
+                lblStatus.Text =
+                    "Loading printer ports...";
+
+                allPrinterPorts =
+                    await Task.Run(() =>
+                        PrinterPortService.GetPorts());
+
+                dgvDrivers.Rows.Clear();
+
+                foreach (PrinterPortModel port
+                    in allPrinterPorts)
+                {
+                    int row =
+                        dgvDrivers.Rows.Add(
+                            port.Name,
+                            port.Description,
+                            port.PrinterHostAddress,
+                            port.PortNumber,
+                            port.Protocol,
+                            port.SNMPEnabled,
+                            port.PortMonitor,
+                            port.ComputerName);
+
+                    dgvDrivers.Rows[row].Tag = port;
+                }
+
+                lblStatus.Text =
+                    $"Printer Ports    {allPrinterPorts.Count} ports";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    ex.Message,
+                    "Driver Manager",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+
+                lblStatus.Text =
+                    "Failed to load printer ports";
+            }
+            finally
+            {
+                btnRefresh.Enabled = true;
+                txtSearch.Enabled = true;
+
+                Cursor = Cursors.Default;
+
+                isLoading = false;
+            }
+        }
+
+        // =========================================================
         // LOAD GHOST PRINTERS
         // =========================================================
         private async Task LoadGhostPrintersAsync()
@@ -789,6 +953,11 @@ namespace Driver_Manager_Windows_10_11
                      "Printer Drivers")
             {
                 await LoadPrinterDriversAsync();
+            }
+            else if (currentPage ==
+                     "Printer Ports")
+            {
+                await LoadPrinterPortsAsync();
             }
             else if (currentPage ==
                      "Ghost Printer")
@@ -902,6 +1071,35 @@ namespace Driver_Manager_Windows_10_11
                             $"{driver.MonitorName} " +
                             $"{driver.SupportedPlatform} " +
                             $"{driver.Status}";
+
+                        found =
+                            string.IsNullOrWhiteSpace(keyword) ||
+                            searchText.Contains(
+                                keyword,
+                                StringComparison.OrdinalIgnoreCase);
+                    }
+                }
+
+                // =====================================================
+                // PRINTER PORTS
+                // =====================================================
+                else if (currentPage ==
+                         "Printer Ports")
+                {
+                    PrinterPortModel? port =
+                        row.Tag as PrinterPortModel;
+
+                    if (port != null)
+                    {
+                        string searchText =
+                            $"{port.Name} " +
+                            $"{port.Description} " +
+                            $"{port.PrinterHostAddress} " +
+                            $"{port.PortNumber} " +
+                            $"{port.Protocol} " +
+                            $"{port.SNMPEnabled} " +
+                            $"{port.PortMonitor} " +
+                            $"{port.ComputerName}";
 
                         found =
                             string.IsNullOrWhiteSpace(keyword) ||
@@ -1047,6 +1245,21 @@ namespace Driver_Manager_Windows_10_11
                     detailsForm.ShowDialog(this);
                 }
             }
+
+            // =====================================================
+            // PRINTER PORTS
+            // =====================================================
+            if (currentPage == "Printer Ports" &&
+                tag is PrinterPortModel printerPort)
+            {
+                using (var detailsForm =
+                    new PrinterPortDetailsForm(printerPort))
+                {
+                    detailsForm.ShowDialog(this);
+                }
+
+                return;
+            }
         }
 
         // =========================================================
@@ -1059,6 +1272,7 @@ namespace Driver_Manager_Windows_10_11
                 btnSystemDrivers,
                 btnDriverStore,
                 btnPrinterDrivers,
+                btnPrinterPorts,
                 btnGhostPrinter
             };
 
@@ -1083,6 +1297,7 @@ namespace Driver_Manager_Windows_10_11
                 btnSystemDrivers,
                 btnDriverStore,
                 btnPrinterDrivers,
+                btnPrinterPorts,
                 btnGhostPrinter
             };
 
