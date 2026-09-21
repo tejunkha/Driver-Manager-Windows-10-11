@@ -38,7 +38,7 @@ namespace Driver_Manager_Windows_10_11
         // =========================================================
         // Current Page
         // =========================================================
-        private string currentPage = "System Drivers";
+        private string currentPage = "";
 
         private bool isLoading = false;
 
@@ -51,17 +51,28 @@ namespace Driver_Manager_Windows_10_11
 
             HideGhostPrinterStatus();
 
-            SetActiveButton(btnSystemDrivers);
-
-            // เปิดรายละเอียด Printer Driver เมื่อดับเบิลคลิกแถว
+            // เปิดรายละเอียดเมื่อดับเบิลคลิกแถว
             dgvDrivers.CellDoubleClick += dgvDrivers_CellDoubleClick;
 
-            Shown += async (sender, e) =>
-            {
-                ConfigureSystemGrid();
+            // =====================================================
+            // Startup: ยังไม่เลือกเมนูใด
+            // =====================================================
+            currentPage = "";
 
-                await LoadSystemDriversAsync();
-            };
+            lblPageTitle.Text = "Driver Manager";
+            lblPageDescription.Text =
+                "Select a driver category to begin";
+
+            dgvDrivers.Rows.Clear();
+
+            txtSearch.Clear();
+            txtSearch.PlaceholderText =
+                "Select a driver category...";
+
+            txtSearch.Enabled = false;
+            btnRefresh.Enabled = false;
+
+            ClearActiveButtons();
         }
 
         // =========================================================
@@ -75,6 +86,9 @@ namespace Driver_Manager_Windows_10_11
                 return;
 
             currentPage = "System Drivers";
+
+            txtSearch.Enabled = true;
+            btnRefresh.Enabled = true;
 
             HideGhostPrinterStatus();
 
@@ -106,6 +120,9 @@ namespace Driver_Manager_Windows_10_11
 
             currentPage = "Driver Store";
 
+            txtSearch.Enabled = true;
+            btnRefresh.Enabled = true;
+
             HideGhostPrinterStatus();
 
             SetActiveButton(btnDriverStore);
@@ -136,6 +153,9 @@ namespace Driver_Manager_Windows_10_11
 
             currentPage = "Printer Drivers";
 
+            txtSearch.Enabled = true;
+            btnRefresh.Enabled = true;
+
             HideGhostPrinterStatus();
 
             SetActiveButton(btnPrinterDrivers);
@@ -164,6 +184,9 @@ namespace Driver_Manager_Windows_10_11
                 return;
 
             currentPage = "Ghost Printer";
+
+            txtSearch.Enabled = true;
+            btnRefresh.Enabled = true;
 
             HideGhostPrinterStatus();
 
@@ -1023,6 +1046,29 @@ namespace Driver_Manager_Windows_10_11
                 {
                     detailsForm.ShowDialog(this);
                 }
+            }
+        }
+
+        // =========================================================
+        // CLEAR ACTIVE BUTTON
+        // =========================================================
+        private void ClearActiveButtons()
+        {
+            Button[] buttons =
+            {
+                btnSystemDrivers,
+                btnDriverStore,
+                btnPrinterDrivers,
+                btnGhostPrinter
+            };
+
+            foreach (Button button in buttons)
+            {
+                button.BackColor =
+                    Color.FromArgb(30, 41, 59);
+
+                button.ForeColor =
+                    Color.FromArgb(226, 232, 240);
             }
         }
 

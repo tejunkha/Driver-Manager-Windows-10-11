@@ -175,7 +175,7 @@ namespace Driver_Manager_Windows_10_11
             // 
             // btnSystemDrivers
             // 
-            btnSystemDrivers.BackColor = Color.FromArgb(37, 99, 235);
+            btnSystemDrivers.BackColor = Color.FromArgb(30, 41, 59);
             btnSystemDrivers.Cursor = Cursors.Hand;
             btnSystemDrivers.FlatAppearance.BorderSize = 0;
             btnSystemDrivers.FlatStyle = FlatStyle.Flat;
