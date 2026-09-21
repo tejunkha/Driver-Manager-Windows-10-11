@@ -22,6 +22,7 @@ namespace Driver_Manager_Windows_10_11
         private Button btnDriverStore;
         private Button btnPrinterDrivers;
         private Button btnPrinterPorts;
+        private Button btnPrinters;
         private Button btnGhostPrinter;
 
         private Panel pnlGhostStatus;
@@ -92,6 +93,7 @@ namespace Driver_Manager_Windows_10_11
             btnDriverStore = new Button();
             btnPrinterDrivers = new Button();
             btnPrinterPorts = new Button();
+            btnPrinters = new Button();
             btnGhostPrinter = new Button();
 
             pnlGhostStatus = new Panel();
@@ -136,6 +138,7 @@ namespace Driver_Manager_Windows_10_11
             pnlSidebar.Controls.Add(btnDriverStore);
             pnlSidebar.Controls.Add(btnPrinterDrivers);
             pnlSidebar.Controls.Add(btnPrinterPorts);
+            pnlSidebar.Controls.Add(btnPrinters);
             pnlSidebar.Controls.Add(btnGhostPrinter);
             pnlSidebar.Dock = DockStyle.Left;
             pnlSidebar.Location = new Point(0, 0);
@@ -248,6 +251,24 @@ namespace Driver_Manager_Windows_10_11
             btnPrinterPorts.UseVisualStyleBackColor = false;
 
             // 
+            // btnPrinters
+            // 
+            btnPrinters.BackColor = Color.FromArgb(30, 41, 59);
+            btnPrinters.Cursor = Cursors.Hand;
+            btnPrinters.FlatAppearance.BorderSize = 0;
+            btnPrinters.FlatStyle = FlatStyle.Flat;
+            btnPrinters.Font = new Font("Segoe UI", 10F);
+            btnPrinters.ForeColor = Color.FromArgb(226, 232, 240);
+            btnPrinters.Location = new Point(12, 335);
+            btnPrinters.Name = "btnPrinters";
+            btnPrinters.Padding = new Padding(12, 0, 0, 0);
+            btnPrinters.Size = new Size(221, 44);
+            btnPrinters.TabIndex = 7;
+            btnPrinters.Text = "▣   Printers (IPP / Vendor)";
+            btnPrinters.TextAlign = ContentAlignment.MiddleLeft;
+            btnPrinters.UseVisualStyleBackColor = false;
+
+            // 
             // btnGhostPrinter
             // 
             btnGhostPrinter.BackColor = Color.FromArgb(30, 41, 59);
@@ -256,11 +277,11 @@ namespace Driver_Manager_Windows_10_11
             btnGhostPrinter.FlatStyle = FlatStyle.Flat;
             btnGhostPrinter.Font = new Font("Segoe UI", 10F);
             btnGhostPrinter.ForeColor = Color.FromArgb(226, 232, 240);
-            btnGhostPrinter.Location = new Point(12, 335);
+            btnGhostPrinter.Location = new Point(12, 385);
             btnGhostPrinter.Name = "btnGhostPrinter";
             btnGhostPrinter.Padding = new Padding(12, 0, 0, 0);
             btnGhostPrinter.Size = new Size(221, 44);
-            btnGhostPrinter.TabIndex = 7;
+            btnGhostPrinter.TabIndex = 8;
             btnGhostPrinter.Text = "▧   Ghost Printer";
             btnGhostPrinter.TextAlign = ContentAlignment.MiddleLeft;
             btnGhostPrinter.UseVisualStyleBackColor = false;

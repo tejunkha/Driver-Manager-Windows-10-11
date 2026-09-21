@@ -42,6 +42,12 @@ namespace Driver_Manager_Windows_10_11
             new List<PrinterPortModel>();
 
         // =========================================================
+        // Installed Printers (IPP / Vendor)
+        // =========================================================
+        private List<InstalledPrinterModel> allInstalledPrinters =
+            new List<InstalledPrinterModel>();
+
+        // =========================================================
         // Current Page
         // =========================================================
         private string currentPage = "";
@@ -62,6 +68,9 @@ namespace Driver_Manager_Windows_10_11
 
             // Printer Ports
             btnPrinterPorts.Click += btnPrinterPorts_Click;
+
+            // Installed Printers (IPP / Vendor)
+            btnPrinters.Click += btnPrinters_Click;
 
             // =====================================================
             // Startup: ยังไม่เลือกเมนูใด
@@ -194,6 +203,9 @@ namespace Driver_Manager_Windows_10_11
 
             currentPage = "Printer Ports";
 
+            txtSearch.Enabled = true;
+            btnRefresh.Enabled = true;
+
             HideGhostPrinterStatus();
 
             SetActiveButton(btnPrinterPorts);
@@ -211,6 +223,40 @@ namespace Driver_Manager_Windows_10_11
             ConfigurePrinterPortGrid();
 
             await LoadPrinterPortsAsync();
+        }
+
+        // =========================================================
+        // INSTALLED PRINTERS (IPP / VENDOR)
+        // =========================================================
+        private async void btnPrinters_Click(
+            object sender,
+            EventArgs e)
+        {
+            if (isLoading)
+                return;
+
+            currentPage = "Printers";
+
+            txtSearch.Enabled = true;
+            btnRefresh.Enabled = true;
+
+            HideGhostPrinterStatus();
+
+            SetActiveButton(btnPrinters);
+
+            lblPageTitle.Text =
+                "Printers";
+
+            lblPageDescription.Text =
+                "View installed printers, IPP and vendor information";
+
+            txtSearch.Clear();
+            txtSearch.PlaceholderText =
+                "Search printer...";
+
+            ConfigureInstalledPrinterGrid();
+
+            await LoadInstalledPrintersAsync();
         }
 
         // =========================================================
@@ -482,6 +528,37 @@ namespace Driver_Manager_Windows_10_11
                     "colComputer",
                     "Computer",
                     100));
+        }
+
+        // =========================================================
+        // INSTALLED PRINTER GRID
+        // =========================================================
+        private void ConfigureInstalledPrinterGrid()
+        {
+            dgvDrivers.Columns.Clear();
+
+            dgvDrivers.Columns.Add(CreateColumn("colName", "Printer Name", 170));
+            dgvDrivers.Columns.Add(CreateColumn("colPrinterType", "Type", 95));
+            dgvDrivers.Columns.Add(CreateColumn("colVendor", "Vendor", 110));
+            dgvDrivers.Columns.Add(CreateColumn("colDriverName", "Driver", 170));
+            dgvDrivers.Columns.Add(CreateColumn("colPortName", "Port", 150));
+            dgvDrivers.Columns.Add(CreateColumn("colHostAddress", "Host Address", 120));
+            dgvDrivers.Columns.Add(CreateColumn("colStatus", "Status", 90));
+
+            dgvDrivers.Columns["colName"]!.DefaultCellStyle.Alignment =
+                DataGridViewContentAlignment.MiddleLeft;
+            dgvDrivers.Columns["colDriverName"]!.DefaultCellStyle.Alignment =
+                DataGridViewContentAlignment.MiddleLeft;
+            dgvDrivers.Columns["colPortName"]!.DefaultCellStyle.Alignment =
+                DataGridViewContentAlignment.MiddleLeft;
+            dgvDrivers.Columns["colVendor"]!.DefaultCellStyle.Alignment =
+                DataGridViewContentAlignment.MiddleLeft;
+            dgvDrivers.Columns["colPrinterType"]!.DefaultCellStyle.Alignment =
+                DataGridViewContentAlignment.MiddleCenter;
+            dgvDrivers.Columns["colHostAddress"]!.DefaultCellStyle.Alignment =
+                DataGridViewContentAlignment.MiddleCenter;
+            dgvDrivers.Columns["colStatus"]!.DefaultCellStyle.Alignment =
+                DataGridViewContentAlignment.MiddleCenter;
         }
 
         // =========================================================
@@ -846,6 +923,91 @@ namespace Driver_Manager_Windows_10_11
         }
 
         // =========================================================
+        // LOAD INSTALLED PRINTERS
+        // =========================================================
+        private async Task LoadInstalledPrintersAsync()
+        {
+            if (isLoading)
+                return;
+
+            isLoading = true;
+
+            try
+            {
+                Cursor = Cursors.WaitCursor;
+
+                btnRefresh.Enabled = false;
+                txtSearch.Enabled = false;
+
+                lblStatus.Text =
+                    "Loading installed printers...";
+
+                allInstalledPrinters =
+                    await Task.Run(() =>
+                        InstalledPrinterService.GetPrinters());
+
+                dgvDrivers.Rows.Clear();
+
+                foreach (InstalledPrinterModel printer
+                    in allInstalledPrinters)
+                {
+                    int row =
+                        dgvDrivers.Rows.Add(
+                            printer.Name,
+                            printer.PrinterType,
+                            printer.Vendor,
+                            printer.DriverName,
+                            printer.PortName,
+                            printer.HostAddress,
+                            printer.Status);
+
+                    dgvDrivers.Rows[row].Tag = printer;
+
+                    string type = printer.PrinterType;
+                    if (type.Equals("IPP", StringComparison.OrdinalIgnoreCase) ||
+                        type.Equals("IPP (Microsoft)", StringComparison.OrdinalIgnoreCase))
+                    {
+                        dgvDrivers.Rows[row].Cells["colPrinterType"]
+                            .Style.ForeColor = Color.FromArgb(37, 99, 235);
+                    }
+                    else if (type.Equals("Vendor", StringComparison.OrdinalIgnoreCase))
+                    {
+                        dgvDrivers.Rows[row].Cells["colPrinterType"]
+                            .Style.ForeColor = Color.FromArgb(124, 58, 237);
+                    }
+                    else if (type.Equals("Offline", StringComparison.OrdinalIgnoreCase))
+                    {
+                        dgvDrivers.Rows[row].Cells["colStatus"]
+                            .Style.ForeColor = Color.FromArgb(220, 38, 38);
+                    }
+                }
+
+                lblStatus.Text =
+                    $"Printers    {allInstalledPrinters.Count} printers";
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    ex.Message,
+                    "Driver Manager",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+
+                lblStatus.Text =
+                    "Failed to load installed printers";
+            }
+            finally
+            {
+                btnRefresh.Enabled = true;
+                txtSearch.Enabled = true;
+
+                Cursor = Cursors.Default;
+
+                isLoading = false;
+            }
+        }
+
+        // =========================================================
         // LOAD GHOST PRINTERS
         // =========================================================
         private async Task LoadGhostPrintersAsync()
@@ -958,6 +1120,11 @@ namespace Driver_Manager_Windows_10_11
                      "Printer Ports")
             {
                 await LoadPrinterPortsAsync();
+            }
+            else if (currentPage ==
+                     "Printers")
+            {
+                await LoadInstalledPrintersAsync();
             }
             else if (currentPage ==
                      "Ghost Printer")
@@ -1110,6 +1277,41 @@ namespace Driver_Manager_Windows_10_11
                 }
 
                 // =====================================================
+                // INSTALLED PRINTERS
+                // =====================================================
+                else if (currentPage ==
+                         "Printers")
+                {
+                    InstalledPrinterModel? printer =
+                        row.Tag as InstalledPrinterModel;
+
+                    if (printer != null)
+                    {
+                        string searchText =
+                            $"{printer.Name} " +
+                            $"{printer.PrinterType} " +
+                            $"{printer.Vendor} " +
+                            $"{printer.DriverName} " +
+                            $"{printer.PortName} " +
+                            $"{printer.HostAddress} " +
+                            $"{printer.Status} " +
+                            $"{printer.Default} " +
+                            $"{printer.Network} " +
+                            $"{printer.Shared} " +
+                            $"{printer.WorkOffline} " +
+                            $"{printer.ServerName} " +
+                            $"{printer.Location} " +
+                            $"{printer.Comment}";
+
+                        found =
+                            string.IsNullOrWhiteSpace(keyword) ||
+                            searchText.Contains(
+                                keyword,
+                                StringComparison.OrdinalIgnoreCase);
+                    }
+                }
+
+                // =====================================================
                 // GHOST PRINTER
                 // =====================================================
                 else if (currentPage ==
@@ -1234,6 +1436,21 @@ namespace Driver_Manager_Windows_10_11
             }
 
             // =====================================================
+            // INSTALLED PRINTERS
+            // =====================================================
+            if (currentPage == "Printers" &&
+                tag is InstalledPrinterModel installedPrinter)
+            {
+                using (var detailsForm =
+                    new InstalledPrinterDetailsForm(installedPrinter))
+                {
+                    detailsForm.ShowDialog(this);
+                }
+
+                return;
+            }
+
+            // =====================================================
             // GHOST PRINTER
             // =====================================================
             if (currentPage == "Ghost Printer" &&
@@ -1273,6 +1490,7 @@ namespace Driver_Manager_Windows_10_11
                 btnDriverStore,
                 btnPrinterDrivers,
                 btnPrinterPorts,
+                btnPrinters,
                 btnGhostPrinter
             };
 
@@ -1298,6 +1516,7 @@ namespace Driver_Manager_Windows_10_11
                 btnDriverStore,
                 btnPrinterDrivers,
                 btnPrinterPorts,
+                btnPrinters,
                 btnGhostPrinter
             };
 
