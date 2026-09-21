@@ -23,6 +23,11 @@ namespace Driver_Manager_Windows_10_11
         private Button btnPrinterDrivers;
         private Button btnGhostPrinter;
 
+        private Panel pnlGhostStatus;
+        private Label lblGhostStatusIcon;
+        private Label lblGhostStatusTitle;
+        private Label lblGhostStatusDescription;
+
         // =========================================================
         // Main
         // =========================================================
@@ -56,14 +61,6 @@ namespace Driver_Manager_Windows_10_11
         private StatusStrip statusStrip;
         private ToolStripStatusLabel lblStatus;
 
-        // =========================================================
-        // Ghost Printer Empty State
-        // =========================================================
-        private Panel pnlGhostEmptyState;
-        private Label lblGhostEmptyIcon;
-        private Label lblGhostEmptyTitle;
-        private Label lblGhostEmptyDescription;
-
         /// <summary>
         /// Clean up any resources being used.
         /// </summary>
@@ -94,6 +91,12 @@ namespace Driver_Manager_Windows_10_11
             btnDriverStore = new Button();
             btnPrinterDrivers = new Button();
             btnGhostPrinter = new Button();
+
+            pnlGhostStatus = new Panel();
+            lblGhostStatusIcon = new Label();
+            lblGhostStatusTitle = new Label();
+            lblGhostStatusDescription = new Label();
+
             pnlMain = new Panel();
             pnlContent = new Panel();
             dgvDrivers = new DataGridView();
@@ -112,11 +115,6 @@ namespace Driver_Manager_Windows_10_11
             lblPageTitle = new Label();
             statusStrip = new StatusStrip();
             lblStatus = new ToolStripStatusLabel();
-
-            pnlGhostEmptyState = new Panel();
-            lblGhostEmptyIcon = new Label();
-            lblGhostEmptyTitle = new Label();
-            lblGhostEmptyDescription = new Label();
             pnlSidebar.SuspendLayout();
             pnlMain.SuspendLayout();
             pnlContent.SuspendLayout();
@@ -262,7 +260,7 @@ namespace Driver_Manager_Windows_10_11
             // 
             pnlContent.BackColor = Color.FromArgb(248, 250, 252);
             pnlContent.Controls.Add(dgvDrivers);
-            pnlContent.Controls.Add(pnlGhostEmptyState);
+            pnlContent.Controls.Add(pnlGhostStatus);
             pnlContent.Controls.Add(pnlToolbar);
             pnlContent.Dock = DockStyle.Fill;
             pnlContent.Location = new Point(0, 82);
@@ -352,90 +350,78 @@ namespace Driver_Manager_Windows_10_11
             colSigned.Name = "colSigned";
             colSigned.ReadOnly = true;
             // 
-            // pnlGhostEmptyState
+            // pnlGhostStatus
             // 
-            pnlGhostEmptyState.Anchor =
-                AnchorStyles.Top |
-                AnchorStyles.Bottom |
-                AnchorStyles.Left |
-                AnchorStyles.Right;
-            pnlGhostEmptyState.BackColor = Color.White;
-            pnlGhostEmptyState.Controls.Add(lblGhostEmptyDescription);
-            pnlGhostEmptyState.Controls.Add(lblGhostEmptyTitle);
-            pnlGhostEmptyState.Controls.Add(lblGhostEmptyIcon);
-            pnlGhostEmptyState.Location = new Point(25, 68);
-            pnlGhostEmptyState.Name = "pnlGhostEmptyState";
-            pnlGhostEmptyState.Size = new Size(1089, 569);
-            pnlGhostEmptyState.TabIndex = 2;
-            pnlGhostEmptyState.Visible = false;
+            pnlGhostStatus.BackColor = Color.White;
+            pnlGhostStatus.Controls.Add(lblGhostStatusDescription);
+            pnlGhostStatus.Controls.Add(lblGhostStatusTitle);
+            pnlGhostStatus.Controls.Add(lblGhostStatusIcon);
+            pnlGhostStatus.Location = new Point(25, 68);
+            pnlGhostStatus.Name = "pnlGhostStatus";
+            pnlGhostStatus.Size = new Size(1089, 569);
+            pnlGhostStatus.TabIndex = 2;
+            pnlGhostStatus.Visible = false;
 
             // 
-            // lblGhostEmptyIcon
+            // lblGhostStatusIcon
             // 
-            lblGhostEmptyIcon.Anchor =
-                AnchorStyles.Top |
-                AnchorStyles.Left |
-                AnchorStyles.Right;
-            lblGhostEmptyIcon.Font =
+            lblGhostStatusIcon.Anchor =
+                AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            lblGhostStatusIcon.Font =
                 new Font("Segoe UI Symbol", 30F);
-            lblGhostEmptyIcon.ForeColor =
+            lblGhostStatusIcon.ForeColor =
                 Color.FromArgb(148, 163, 184);
-            lblGhostEmptyIcon.Location =
-                new Point(25, 150);
-            lblGhostEmptyIcon.Name =
-                "lblGhostEmptyIcon";
-            lblGhostEmptyIcon.Size =
-                new Size(1039, 55);
-            lblGhostEmptyIcon.TabIndex = 0;
-            lblGhostEmptyIcon.Text =
-                "▣";
-            lblGhostEmptyIcon.TextAlign =
+            lblGhostStatusIcon.Location =
+                new Point(20, 145);
+            lblGhostStatusIcon.Name =
+                "lblGhostStatusIcon";
+            lblGhostStatusIcon.Size =
+                new Size(1049, 55);
+            lblGhostStatusIcon.TabIndex = 0;
+            lblGhostStatusIcon.Text = "▣";
+            lblGhostStatusIcon.TextAlign =
                 ContentAlignment.MiddleCenter;
 
             // 
-            // lblGhostEmptyTitle
+            // lblGhostStatusTitle
             // 
-            lblGhostEmptyTitle.Anchor =
-                AnchorStyles.Top |
-                AnchorStyles.Left |
-                AnchorStyles.Right;
-            lblGhostEmptyTitle.Font =
+            lblGhostStatusTitle.Anchor =
+                AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            lblGhostStatusTitle.Font =
                 new Font("Segoe UI Semibold", 13F, FontStyle.Bold);
-            lblGhostEmptyTitle.ForeColor =
+            lblGhostStatusTitle.ForeColor =
                 Color.FromArgb(51, 65, 85);
-            lblGhostEmptyTitle.Location =
-                new Point(25, 218);
-            lblGhostEmptyTitle.Name =
-                "lblGhostEmptyTitle";
-            lblGhostEmptyTitle.Size =
-                new Size(1039, 30);
-            lblGhostEmptyTitle.TabIndex = 1;
-            lblGhostEmptyTitle.Text =
+            lblGhostStatusTitle.Location =
+                new Point(20, 214);
+            lblGhostStatusTitle.Name =
+                "lblGhostStatusTitle";
+            lblGhostStatusTitle.Size =
+                new Size(1049, 30);
+            lblGhostStatusTitle.TabIndex = 1;
+            lblGhostStatusTitle.Text =
                 "No Ghost Printer Found";
-            lblGhostEmptyTitle.TextAlign =
+            lblGhostStatusTitle.TextAlign =
                 ContentAlignment.MiddleCenter;
 
             // 
-            // lblGhostEmptyDescription
+            // lblGhostStatusDescription
             // 
-            lblGhostEmptyDescription.Anchor =
-                AnchorStyles.Top |
-                AnchorStyles.Left |
-                AnchorStyles.Right;
-            lblGhostEmptyDescription.Font =
+            lblGhostStatusDescription.Anchor =
+                AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            lblGhostStatusDescription.Font =
                 new Font("Segoe UI", 9.5F);
-            lblGhostEmptyDescription.ForeColor =
+            lblGhostStatusDescription.ForeColor =
                 Color.FromArgb(100, 116, 139);
-            lblGhostEmptyDescription.Location =
-                new Point(25, 255);
-            lblGhostEmptyDescription.Name =
-                "lblGhostEmptyDescription";
-            lblGhostEmptyDescription.Size =
-                new Size(1039, 24);
-            lblGhostEmptyDescription.TabIndex = 2;
-            lblGhostEmptyDescription.Text =
+            lblGhostStatusDescription.Location =
+                new Point(20, 251);
+            lblGhostStatusDescription.Name =
+                "lblGhostStatusDescription";
+            lblGhostStatusDescription.Size =
+                new Size(1049, 24);
+            lblGhostStatusDescription.TabIndex = 2;
+            lblGhostStatusDescription.Text =
                 "No disconnected printer devices detected.";
-            lblGhostEmptyDescription.TextAlign =
+            lblGhostStatusDescription.TextAlign =
                 ContentAlignment.MiddleCenter;
 
             // 

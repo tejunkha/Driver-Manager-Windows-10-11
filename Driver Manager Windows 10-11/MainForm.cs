@@ -49,7 +49,7 @@ namespace Driver_Manager_Windows_10_11
         {
             InitializeComponent();
 
-            HideGhostEmptyState();
+            HideGhostPrinterStatus();
 
             SetActiveButton(btnSystemDrivers);
 
@@ -76,7 +76,7 @@ namespace Driver_Manager_Windows_10_11
 
             currentPage = "System Drivers";
 
-            HideGhostEmptyState();
+            HideGhostPrinterStatus();
 
             SetActiveButton(btnSystemDrivers);
 
@@ -106,7 +106,7 @@ namespace Driver_Manager_Windows_10_11
 
             currentPage = "Driver Store";
 
-            HideGhostEmptyState();
+            HideGhostPrinterStatus();
 
             SetActiveButton(btnDriverStore);
 
@@ -136,7 +136,7 @@ namespace Driver_Manager_Windows_10_11
 
             currentPage = "Printer Drivers";
 
-            HideGhostEmptyState();
+            HideGhostPrinterStatus();
 
             SetActiveButton(btnPrinterDrivers);
 
@@ -165,7 +165,7 @@ namespace Driver_Manager_Windows_10_11
 
             currentPage = "Ghost Printer";
 
-            HideGhostEmptyState();
+            HideGhostPrinterStatus();
 
             SetActiveButton(btnGhostPrinter);
 
@@ -706,11 +706,13 @@ namespace Driver_Manager_Windows_10_11
 
                 if (allGhostPrinters.Count == 0)
                 {
-                    ShowGhostEmptyState();
+                    ShowGhostPrinterStatus(
+                        "No Ghost Printer Found",
+                        "No disconnected printer devices detected.");
                 }
                 else
                 {
-                    HideGhostEmptyState();
+                    HideGhostPrinterStatus();
                 }
 
                 lblStatus.Text =
@@ -925,29 +927,28 @@ namespace Driver_Manager_Windows_10_11
         }
 
         // =========================================================
-        // GHOST PRINTER EMPTY STATE
+        // GHOST PRINTER STATUS
         // =========================================================
-        private void ShowGhostEmptyState()
+        private void ShowGhostPrinterStatus(
+            string title,
+            string description)
         {
             if (currentPage != "Ghost Printer")
                 return;
 
-            lblGhostEmptyTitle.Text =
-                "No Ghost Printer Found";
+            lblGhostStatusTitle.Text = title;
+            lblGhostStatusDescription.Text = description;
 
-            lblGhostEmptyDescription.Text =
-                "No disconnected printer devices detected.";
-
-            pnlGhostEmptyState.Visible = true;
-            pnlGhostEmptyState.BringToFront();
+            pnlGhostStatus.Visible = true;
+            pnlGhostStatus.BringToFront();
         }
 
-        private void HideGhostEmptyState()
+        private void HideGhostPrinterStatus()
         {
-            if (pnlGhostEmptyState == null)
+            if (pnlGhostStatus == null)
                 return;
 
-            pnlGhostEmptyState.Visible = false;
+            pnlGhostStatus.Visible = false;
         }
 
         // =========================================================
@@ -961,23 +962,67 @@ namespace Driver_Manager_Windows_10_11
             if (e.RowIndex < 0)
                 return;
 
-            // ทำงานเฉพาะหน้า Printer Drivers
-            if (currentPage != "Printer Drivers")
-                return;
-
             if (e.RowIndex >= dgvDrivers.Rows.Count)
                 return;
 
-            if (dgvDrivers.Rows[e.RowIndex].Tag
-                is not PrinterDriverModel driver)
+            object? tag = dgvDrivers.Rows[e.RowIndex].Tag;
+
+            // =====================================================
+            // SYSTEM DRIVERS
+            // =====================================================
+            if (currentPage == "System Drivers" &&
+                tag is SystemDriverModel systemDriver)
             {
+                using (var detailsForm =
+                    new SystemDriverDetailsForm(systemDriver))
+                {
+                    detailsForm.ShowDialog(this);
+                }
+
                 return;
             }
 
-            using (var detailsForm =
-                new PrinterDriverDetailsForm(driver))
+            // =====================================================
+            // DRIVER STORE
+            // =====================================================
+            if (currentPage == "Driver Store" &&
+                tag is DriverStoreModel storeDriver)
             {
-                detailsForm.ShowDialog(this);
+                using (var detailsForm =
+                    new DriverStoreDetailsForm(storeDriver))
+                {
+                    detailsForm.ShowDialog(this);
+                }
+
+                return;
+            }
+
+            // =====================================================
+            // PRINTER DRIVERS
+            // =====================================================
+            if (currentPage == "Printer Drivers" &&
+                tag is PrinterDriverModel printerDriver)
+            {
+                using (var detailsForm =
+                    new PrinterDriverDetailsForm(printerDriver))
+                {
+                    detailsForm.ShowDialog(this);
+                }
+
+                return;
+            }
+
+            // =====================================================
+            // GHOST PRINTER
+            // =====================================================
+            if (currentPage == "Ghost Printer" &&
+                tag is GhostPrinterModel ghostPrinter)
+            {
+                using (var detailsForm =
+                    new GhostPrinterDetailsForm(ghostPrinter))
+                {
+                    detailsForm.ShowDialog(this);
+                }
             }
         }
 
