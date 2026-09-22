@@ -58,6 +58,7 @@ namespace Driver_Manager_Windows_10_11
         // Utility UI
         // =========================================================
         private Button? btnAbout;
+        private Button? btnActivityLog;
         private Label? lblAdminMode;
 
         // =========================================================
@@ -75,6 +76,7 @@ namespace Driver_Manager_Windows_10_11
 
             ErrorHandler.Install();
             InitializeUtilityUi();
+            ActivityLogService.Log("APP START", "Application", "Driver Manager", "Success", $"Version {AppInfo.Version}");
 
             HideGhostPrinterStatus();
 
@@ -125,6 +127,7 @@ namespace Driver_Manager_Windows_10_11
                 return;
 
             currentPage = "System Drivers";
+            ActivityLogService.Log("VIEW", "System Drivers", "System Drivers", "Success", "Opened page");
 
             txtSearch.Enabled = true;
             btnRefresh.Enabled = true;
@@ -160,6 +163,7 @@ namespace Driver_Manager_Windows_10_11
                 return;
 
             currentPage = "Driver Store";
+            ActivityLogService.Log("VIEW", "Driver Store", "Driver Store", "Success", "Opened page");
 
             txtSearch.Enabled = true;
             btnRefresh.Enabled = true;
@@ -195,6 +199,7 @@ namespace Driver_Manager_Windows_10_11
                 return;
 
             currentPage = "Printer Drivers";
+            ActivityLogService.Log("VIEW", "Printer Drivers", "Printer Drivers", "Success", "Opened page");
 
             txtSearch.Enabled = true;
             btnRefresh.Enabled = true;
@@ -229,6 +234,7 @@ namespace Driver_Manager_Windows_10_11
                 return;
 
             currentPage = "Printer Ports";
+            ActivityLogService.Log("VIEW", "Printer Ports", "Printer Ports", "Success", "Opened page");
 
             txtSearch.Enabled = true;
             btnRefresh.Enabled = true;
@@ -265,6 +271,7 @@ namespace Driver_Manager_Windows_10_11
                 return;
 
             currentPage = "Printers";
+            ActivityLogService.Log("VIEW", "Printers", "Printers", "Success", "Opened page");
 
             txtSearch.Enabled = true;
             btnRefresh.Enabled = true;
@@ -301,6 +308,7 @@ namespace Driver_Manager_Windows_10_11
                 return;
 
             currentPage = "Ghost Printer";
+            ActivityLogService.Log("VIEW", "Ghost Printer", "Ghost Printer", "Success", "Opened page");
 
             txtSearch.Enabled = true;
             btnRefresh.Enabled = true;
@@ -1116,6 +1124,16 @@ namespace Driver_Manager_Windows_10_11
             if (isLoading)
                 return;
 
+            if (!string.IsNullOrWhiteSpace(currentPage))
+            {
+                ActivityLogService.Log(
+                    "REFRESH",
+                    currentPage,
+                    currentPage,
+                    "Success",
+                    "Refresh requested");
+            }
+
             if (currentPage ==
                 "System Drivers")
             {
@@ -1372,15 +1390,31 @@ namespace Driver_Manager_Windows_10_11
             lblAdminMode = new Label
             {
                 AutoSize = false,
-                Text = AdminHelper.GetModeText(),
-                Font = new Font("Segoe UI", 8.5F, FontStyle.Regular),
-                ForeColor = Color.FromArgb(148, 163, 184),
-                Location = new Point(22, 76),
-                Size = new Size(200, 20)
+                Location = new Point(22, 74),
+                Size = new Size(200, 28)
             };
+
+            AdminModeStyle.Apply(lblAdminMode);
 
             pnlSidebar.Controls.Add(lblAdminMode);
             lblAdminMode.BringToFront();
+
+            btnActivityLog = new Button
+            {
+                Text = "▤   Activity Log",
+                Font = new Font("Segoe UI", 9.5F),
+                ForeColor = Color.FromArgb(226, 232, 240),
+                BackColor = Color.FromArgb(30, 41, 59),
+                FlatStyle = FlatStyle.Flat,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(12, 0, 0, 0),
+                Height = 42,
+                Dock = DockStyle.Bottom,
+                Cursor = Cursors.Hand
+            };
+
+            btnActivityLog.FlatAppearance.BorderSize = 0;
+            btnActivityLog.Click += btnActivityLog_Click;
 
             btnAbout = new Button
             {
@@ -1397,10 +1431,21 @@ namespace Driver_Manager_Windows_10_11
             };
 
             btnAbout.FlatAppearance.BorderSize = 0;
+            btnAbout.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
+            btnAbout.Dock = DockStyle.None;
+            btnAbout.Location = new Point(0, pnlSidebar.ClientSize.Height - 42);
+            btnAbout.Width = pnlSidebar.ClientSize.Width;
             btnAbout.Click += btnAbout_Click;
 
+            btnActivityLog.Dock = DockStyle.None;
+            btnActivityLog.Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Bottom;
+            btnActivityLog.Location = new Point(0, pnlSidebar.ClientSize.Height - 84);
+            btnActivityLog.Width = pnlSidebar.ClientSize.Width;
+
             pnlSidebar.Controls.Add(btnAbout);
+            pnlSidebar.Controls.Add(btnActivityLog);
             btnAbout.BringToFront();
+            btnActivityLog.BringToFront();
 
             ToolTip toolTip = new ToolTip();
             toolTip.SetToolTip(
@@ -1414,6 +1459,21 @@ namespace Driver_Manager_Windows_10_11
         {
             using AboutForm aboutForm = new AboutForm();
             aboutForm.ShowDialog(this);
+        }
+
+        private void btnActivityLog_Click(
+            object? sender,
+            EventArgs e)
+        {
+            ActivityLogService.Log(
+                "VIEW",
+                "Activity Log",
+                "Activity Log",
+                "Success",
+                "Opened activity log");
+
+            using ActivityLogForm activityLogForm = new ActivityLogForm();
+            activityLogForm.ShowDialog(this);
         }
 
         // =========================================================
@@ -1548,6 +1608,7 @@ namespace Driver_Manager_Windows_10_11
                         if (secondConfirm != DialogResult.Yes)
                         {
                             lblStatus.Text = "ยกเลิกการลบ";
+                            ActivityLogService.Log("DELETE", currentPage, itemName, "Cancelled", "User cancelled because the printer driver is currently in use");
                             return;
                         }
                     }
@@ -1596,6 +1657,8 @@ namespace Driver_Manager_Windows_10_11
 
             if (success)
             {
+                ActivityLogService.Log("DELETE", currentPage, itemName, "Success", message);
+
                 MessageBox.Show(
                     string.IsNullOrWhiteSpace(message)
                         ? "ลบรายการเรียบร้อยแล้ว"
@@ -1608,6 +1671,8 @@ namespace Driver_Manager_Windows_10_11
             }
             else
             {
+                ActivityLogService.Log("DELETE", currentPage, itemName, "Failed", message);
+
                 MessageBox.Show(
                     string.IsNullOrWhiteSpace(message)
                         ? "Windows ไม่สามารถดำเนินการลบรายการนี้ได้"
