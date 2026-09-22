@@ -1,16 +1,21 @@
+using System;
+using System.Windows.Forms;
+
 namespace Driver_Manager_Windows_10_11
 {
     internal static class Program
     {
-        /// <summary>
-        ///  The main entry point for the application.
-        /// </summary>
         [STAThread]
         static void Main()
         {
-            // To customize application configuration such as set high DPI settings or default font,
-            // see https://aka.ms/applicationconfiguration.
+            // ต้องตั้งค่าก่อนสร้าง Control ใด ๆ
+            Application.SetUnhandledExceptionMode(
+                UnhandledExceptionMode.CatchException);
+
+            ErrorHandler.Install();
+
             ApplicationConfiguration.Initialize();
+
             Application.Run(new MainForm());
         }
     }

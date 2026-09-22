@@ -55,6 +55,12 @@ namespace Driver_Manager_Windows_10_11
         private bool isLoading = false;
 
         // =========================================================
+        // Utility UI
+        // =========================================================
+        private Button? btnAbout;
+        private Label? lblAdminMode;
+
+        // =========================================================
         // Constructor
         // =========================================================
         public MainForm()
@@ -66,6 +72,9 @@ namespace Driver_Manager_Windows_10_11
 
             // Sidebar styling: medium icons + consistent spacing
             UiStyle.ApplySidebar(this);
+
+            ErrorHandler.Install();
+            InitializeUtilityUi();
 
             HideGhostPrinterStatus();
 
@@ -696,11 +705,7 @@ namespace Driver_Manager_Windows_10_11
             }
             catch (Exception ex)
             {
-                MessageBox.Show(
-                    ex.Message,
-                    "Driver Manager",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
+                ErrorHandler.ShowError(ex, "Load System Drivers");
 
                 lblStatus.Text =
                     "Failed to load system drivers";
@@ -765,11 +770,7 @@ namespace Driver_Manager_Windows_10_11
             }
             catch (Exception ex)
             {
-                MessageBox.Show(
-                    ex.Message,
-                    "Driver Manager",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
+                ErrorHandler.ShowError(ex, "Load Driver Store");
 
                 lblStatus.Text =
                     "Failed to load Driver Store";
@@ -860,11 +861,7 @@ namespace Driver_Manager_Windows_10_11
             }
             catch (Exception ex)
             {
-                MessageBox.Show(
-                    ex.Message,
-                    "Driver Manager",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
+                ErrorHandler.ShowError(ex, "Load Printer Drivers");
 
                 lblStatus.Text =
                     "Failed to load printer drivers";
@@ -929,11 +926,7 @@ namespace Driver_Manager_Windows_10_11
             }
             catch (Exception ex)
             {
-                MessageBox.Show(
-                    ex.Message,
-                    "Driver Manager",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
+                ErrorHandler.ShowError(ex, "Load Printer Ports");
 
                 lblStatus.Text =
                     "Failed to load printer ports";
@@ -1015,11 +1008,7 @@ namespace Driver_Manager_Windows_10_11
             }
             catch (Exception ex)
             {
-                MessageBox.Show(
-                    ex.Message,
-                    "Driver Manager",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
+                ErrorHandler.ShowError(ex, "Load Printers");
 
                 lblStatus.Text =
                     "Failed to load installed printers";
@@ -1100,11 +1089,7 @@ namespace Driver_Manager_Windows_10_11
             }
             catch (Exception ex)
             {
-                MessageBox.Show(
-                    ex.Message,
-                    "Driver Manager",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
+                ErrorHandler.ShowError(ex, "Load Ghost Printer");
 
                 lblStatus.Text =
                     "Failed to load ghost printers";
@@ -1380,6 +1365,58 @@ namespace Driver_Manager_Windows_10_11
         }
 
         // =========================================================
+        // Utility UI
+        // =========================================================
+        private void InitializeUtilityUi()
+        {
+            lblAdminMode = new Label
+            {
+                AutoSize = false,
+                Text = AdminHelper.GetModeText(),
+                Font = new Font("Segoe UI", 8.5F, FontStyle.Regular),
+                ForeColor = Color.FromArgb(148, 163, 184),
+                Location = new Point(22, 76),
+                Size = new Size(200, 20)
+            };
+
+            pnlSidebar.Controls.Add(lblAdminMode);
+            lblAdminMode.BringToFront();
+
+            btnAbout = new Button
+            {
+                Text = "ⓘ   About",
+                Font = new Font("Segoe UI", 9.5F),
+                ForeColor = Color.FromArgb(226, 232, 240),
+                BackColor = Color.FromArgb(30, 41, 59),
+                FlatStyle = FlatStyle.Flat,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(12, 0, 0, 0),
+                Height = 42,
+                Dock = DockStyle.Bottom,
+                Cursor = Cursors.Hand
+            };
+
+            btnAbout.FlatAppearance.BorderSize = 0;
+            btnAbout.Click += btnAbout_Click;
+
+            pnlSidebar.Controls.Add(btnAbout);
+            btnAbout.BringToFront();
+
+            ToolTip toolTip = new ToolTip();
+            toolTip.SetToolTip(
+                btnAbout,
+                $"{AppInfo.Name} v{AppInfo.Version}");
+        }
+
+        private void btnAbout_Click(
+            object? sender,
+            EventArgs e)
+        {
+            using AboutForm aboutForm = new AboutForm();
+            aboutForm.ShowDialog(this);
+        }
+
+        // =========================================================
         // UI STYLE ACCESSORS
         // =========================================================
         internal Button GetRefreshButtonForStyle() => btnRefresh;
@@ -1453,16 +1490,8 @@ namespace Driver_Manager_Windows_10_11
                 return;
             }
 
-            if (!DriverActionService.IsAdministrator())
-            {
-                MessageBox.Show(
-                    "การลบต้องใช้สิทธิ์ผู้ดูแลระบบ (Administrator)\n\n" +
-                    "กรุณาปิดโปรแกรม แล้วเปิดโปรแกรมด้วย Run as administrator จากนั้นลองใหม่อีกครั้ง",
-                    "ต้องใช้สิทธิ์ Administrator",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
+            if (!AdminHelper.RequireAdministrator(this, "Delete"))
                 return;
-            }
 
             string itemName = GetDeleteItemName(tag);
             string warning = GetDeleteWarning(tag);
