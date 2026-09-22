@@ -1,4 +1,4 @@
-﻿using System.Drawing;
+using System.Drawing;
 using System.Windows.Forms;
 using DrawingFont = System.Drawing.Font;
 namespace Driver_Manager_Windows_10_11
@@ -43,6 +43,7 @@ namespace Driver_Manager_Windows_10_11
 
         private TextBox txtSearch;
         private Button btnRefresh;
+        private Button btnDelete;
 
         // =========================================================
         // DataGridView
@@ -114,6 +115,7 @@ namespace Driver_Manager_Windows_10_11
             pnlToolbar = new Panel();
             txtSearch = new TextBox();
             btnRefresh = new Button();
+            btnDelete = new Button();
             pnlHeader = new Panel();
             lblPageDescription = new Label();
             lblPageTitle = new Label();
@@ -470,6 +472,7 @@ namespace Driver_Manager_Windows_10_11
             // pnlToolbar
             // 
             pnlToolbar.BackColor = Color.FromArgb(248, 250, 252);
+            pnlToolbar.Controls.Add(btnDelete);
             pnlToolbar.Controls.Add(txtSearch);
             pnlToolbar.Controls.Add(btnRefresh);
             pnlToolbar.Dock = DockStyle.Top;
@@ -504,6 +507,22 @@ namespace Driver_Manager_Windows_10_11
             btnRefresh.Text = "⟳  Refresh";
             btnRefresh.UseVisualStyleBackColor = false;
             btnRefresh.Click += btnRefresh_Click;
+            // 
+            // btnDelete
+            // 
+            btnDelete.BackColor = Color.FromArgb(220, 38, 38);
+            btnDelete.Cursor = Cursors.Hand;
+            btnDelete.FlatAppearance.BorderSize = 0;
+            btnDelete.FlatStyle = FlatStyle.Flat;
+            btnDelete.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Bold);
+            btnDelete.ForeColor = Color.White;
+            btnDelete.Location = new Point(520, 4);
+            btnDelete.Name = "btnDelete";
+            btnDelete.Size = new Size(105, 32);
+            btnDelete.TabIndex = 2;
+            btnDelete.Text = "✕  Delete";
+            btnDelete.UseVisualStyleBackColor = false;
+            btnDelete.Enabled = false;
             // 
             // pnlHeader
             // 

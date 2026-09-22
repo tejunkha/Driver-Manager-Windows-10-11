@@ -72,6 +72,10 @@ namespace Driver_Manager_Windows_10_11
             // Installed Printers (IPP / Vendor)
             btnPrinters.Click += btnPrinters_Click;
 
+            // ACTION / Delete
+            btnDelete.Click += btnDelete_Click;
+            dgvDrivers.SelectionChanged += dgvDrivers_SelectionChanged;
+
             // =====================================================
             // Startup: ยังไม่เลือกเมนูใด
             // =====================================================
@@ -89,8 +93,10 @@ namespace Driver_Manager_Windows_10_11
 
             txtSearch.Enabled = false;
             btnRefresh.Enabled = false;
+            btnDelete.Enabled = false;
 
             ClearActiveButtons();
+            UpdateDeleteButtonState();
         }
 
         // =========================================================
@@ -122,6 +128,8 @@ namespace Driver_Manager_Windows_10_11
             txtSearch.PlaceholderText = "Search driver...";
 
             ConfigureSystemGrid();
+
+            UpdateDeleteButtonState();
 
             await LoadSystemDriversAsync();
         }
@@ -156,6 +164,8 @@ namespace Driver_Manager_Windows_10_11
 
             ConfigureDriverStoreGrid();
 
+            UpdateDeleteButtonState();
+
             await LoadDriverStoreAsync();
         }
 
@@ -187,6 +197,8 @@ namespace Driver_Manager_Windows_10_11
             txtSearch.Clear();
 
             ConfigurePrinterGrid();
+
+            UpdateDeleteButtonState();
 
             await LoadPrinterDriversAsync();
         }
@@ -222,6 +234,8 @@ namespace Driver_Manager_Windows_10_11
 
             ConfigurePrinterPortGrid();
 
+            UpdateDeleteButtonState();
+
             await LoadPrinterPortsAsync();
         }
 
@@ -256,6 +270,8 @@ namespace Driver_Manager_Windows_10_11
 
             ConfigureInstalledPrinterGrid();
 
+            UpdateDeleteButtonState();
+
             await LoadInstalledPrintersAsync();
         }
 
@@ -289,6 +305,8 @@ namespace Driver_Manager_Windows_10_11
                 "Search ghost printer...";
 
             ConfigureGhostPrinterGrid();
+
+            UpdateDeleteButtonState();
 
             await LoadGhostPrintersAsync();
         }
@@ -689,6 +707,7 @@ namespace Driver_Manager_Windows_10_11
                 Cursor = Cursors.Default;
 
                 isLoading = false;
+                UpdateDeleteButtonState();
             }
         }
 
@@ -757,6 +776,7 @@ namespace Driver_Manager_Windows_10_11
                 Cursor = Cursors.Default;
 
                 isLoading = false;
+                UpdateDeleteButtonState();
             }
         }
 
@@ -851,6 +871,7 @@ namespace Driver_Manager_Windows_10_11
                 Cursor = Cursors.Default;
 
                 isLoading = false;
+                UpdateDeleteButtonState();
             }
         }
 
@@ -919,6 +940,7 @@ namespace Driver_Manager_Windows_10_11
                 Cursor = Cursors.Default;
 
                 isLoading = false;
+                UpdateDeleteButtonState();
             }
         }
 
@@ -1004,6 +1026,7 @@ namespace Driver_Manager_Windows_10_11
                 Cursor = Cursors.Default;
 
                 isLoading = false;
+                UpdateDeleteButtonState();
             }
         }
 
@@ -1088,6 +1111,7 @@ namespace Driver_Manager_Windows_10_11
                 Cursor = Cursors.Default;
 
                 isLoading = false;
+                UpdateDeleteButtonState();
             }
         }
 
@@ -1347,6 +1371,271 @@ namespace Driver_Manager_Windows_10_11
 
             lblStatus.Text =
                 $"{currentPage}    {visibleCount} / {totalCount}";
+        }
+
+        // =========================================================
+        // ACTION / DELETE
+        // =========================================================
+        private void dgvDrivers_SelectionChanged(
+            object? sender,
+            EventArgs e)
+        {
+            UpdateDeleteButtonState();
+        }
+
+        private void UpdateDeleteButtonState()
+        {
+            if (btnDelete == null || dgvDrivers == null)
+                return;
+
+            bool supportedPage =
+                currentPage == "Driver Store" ||
+                currentPage == "Printer Drivers" ||
+                currentPage == "Printer Ports" ||
+                currentPage == "Printers" ||
+                currentPage == "Ghost Printer";
+
+            bool hasSelection =
+                dgvDrivers.SelectedRows.Count > 0 &&
+                dgvDrivers.SelectedRows[0].Tag != null;
+
+            btnDelete.Enabled = supportedPage && hasSelection && !isLoading;
+        }
+
+        private async void btnDelete_Click(
+            object? sender,
+            EventArgs e)
+        {
+            if (isLoading)
+                return;
+
+            if (dgvDrivers.SelectedRows.Count == 0)
+                return;
+
+            DataGridViewRow row = dgvDrivers.SelectedRows[0];
+            object? tag = row.Tag;
+
+            if (tag == null)
+                return;
+
+            if (currentPage == "System Drivers")
+            {
+                MessageBox.Show(
+                    "System driver deletion is disabled for safety.",
+                    "Delete Driver",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+                return;
+            }
+
+            if (!DriverActionService.IsAdministrator())
+            {
+                MessageBox.Show(
+                    "Delete actions require Administrator privileges.\n\n" +
+                    "Close the application and run it as administrator, then try again.",
+                    "Administrator Required",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                return;
+            }
+
+            string itemName = GetDeleteItemName(tag);
+            string warning = GetDeleteWarning(tag);
+
+            DialogResult confirm = MessageBox.Show(
+                warning + Environment.NewLine + Environment.NewLine +
+                $"Item: {itemName}" + Environment.NewLine + Environment.NewLine +
+                "This action cannot be undone from Driver Manager. Continue?",
+                "Confirm Delete",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2);
+
+            if (confirm != DialogResult.Yes)
+                return;
+
+            bool success = false;
+            string message = "";
+
+            try
+            {
+                Cursor = Cursors.WaitCursor;
+                btnDelete.Enabled = false;
+                btnRefresh.Enabled = false;
+                txtSearch.Enabled = false;
+                lblStatus.Text = "Deleting...";
+
+                if (tag is DriverStoreModel driverStore)
+                {
+                    success = await Task.Run(() =>
+                        DriverActionService.DeleteDriverStore(
+                            driverStore,
+                            out message));
+                }
+                else if (tag is PrinterDriverModel printerDriver)
+                {
+                    bool inUse = DriverActionService.IsPrinterDriverInUse(
+                        printerDriver.Name,
+                        out string printersUsingDriver);
+
+                    if (inUse)
+                    {
+                        DialogResult secondConfirm = MessageBox.Show(
+                            "This printer driver is currently used by:" +
+                            Environment.NewLine + Environment.NewLine +
+                            printersUsingDriver +
+                            Environment.NewLine + Environment.NewLine +
+                            "Removing the driver may affect these printers. Continue?",
+                            "Printer Driver In Use",
+                            MessageBoxButtons.YesNo,
+                            MessageBoxIcon.Warning,
+                            MessageBoxDefaultButton.Button2);
+
+                        if (secondConfirm != DialogResult.Yes)
+                        {
+                            lblStatus.Text = "Delete cancelled";
+                            return;
+                        }
+                    }
+
+                    success = await Task.Run(() =>
+                        DriverActionService.DeletePrinterDriver(
+                            printerDriver,
+                            out message));
+                }
+                else if (tag is PrinterPortModel printerPort)
+                {
+                    success = await Task.Run(() =>
+                        DriverActionService.DeletePrinterPort(
+                            printerPort,
+                            out message));
+                }
+                else if (tag is InstalledPrinterModel installedPrinter)
+                {
+                    success = await Task.Run(() =>
+                        DriverActionService.DeletePrinter(
+                            installedPrinter,
+                            out message));
+                }
+                else if (tag is GhostPrinterModel ghostPrinter)
+                {
+                    success = await Task.Run(() =>
+                        DriverActionService.DeleteGhostPrinter(
+                            ghostPrinter,
+                            out message));
+                }
+                else
+                {
+                    success = false;
+                    message = "This item cannot be deleted.";
+                }
+            }
+            catch (Exception ex)
+            {
+                success = false;
+                message = ex.Message;
+            }
+            finally
+            {
+                Cursor = Cursors.Default;
+            }
+
+            if (success)
+            {
+                MessageBox.Show(
+                    string.IsNullOrWhiteSpace(message)
+                        ? "Delete completed successfully."
+                        : message,
+                    "Delete Completed",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+
+                await ReloadCurrentPageAsync();
+            }
+            else
+            {
+                MessageBox.Show(
+                    string.IsNullOrWhiteSpace(message)
+                        ? "Windows could not complete the delete operation."
+                        : message,
+                    "Delete Failed",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+
+                btnRefresh.Enabled = true;
+                txtSearch.Enabled = true;
+                UpdateDeleteButtonState();
+            }
+        }
+
+        private string GetDeleteItemName(object tag)
+        {
+            if (tag is DriverStoreModel driverStore)
+                return driverStore.PublishedName;
+
+            if (tag is PrinterDriverModel printerDriver)
+                return printerDriver.Name;
+
+            if (tag is PrinterPortModel printerPort)
+                return printerPort.Name;
+
+            if (tag is InstalledPrinterModel installedPrinter)
+                return installedPrinter.Name;
+
+            if (tag is GhostPrinterModel ghostPrinter)
+                return string.IsNullOrWhiteSpace(ghostPrinter.Name)
+                    ? ghostPrinter.DeviceId
+                    : ghostPrinter.Name;
+
+            return "Selected item";
+        }
+
+        private string GetDeleteWarning(object tag)
+        {
+            if (tag is DriverStoreModel)
+            {
+                return "This removes the driver package from the Windows Driver Store. " +
+                       "Windows may uninstall it from devices using that package.";
+            }
+
+            if (tag is PrinterDriverModel)
+            {
+                return "This removes the printer driver. Other printers using this driver may be affected.";
+            }
+
+            if (tag is PrinterPortModel)
+            {
+                return "This removes the printer port. Printers using this port may stop working.";
+            }
+
+            if (tag is InstalledPrinterModel)
+            {
+                return "This removes the installed printer queue. It does not remove the printer driver.";
+            }
+
+            if (tag is GhostPrinterModel)
+            {
+                return "This removes the non-present printer device or stale printer queue. " +
+                       "It does not remove the Driver Store package.";
+            }
+
+            return "The selected item will be removed.";
+        }
+
+        private async Task ReloadCurrentPageAsync()
+        {
+            if (currentPage == "Driver Store")
+                await LoadDriverStoreAsync();
+            else if (currentPage == "Printer Drivers")
+                await LoadPrinterDriversAsync();
+            else if (currentPage == "Printer Ports")
+                await LoadPrinterPortsAsync();
+            else if (currentPage == "Printers")
+                await LoadInstalledPrintersAsync();
+            else if (currentPage == "Ghost Printer")
+                await LoadGhostPrintersAsync();
+            else
+                UpdateDeleteButtonState();
         }
 
         // =========================================================
