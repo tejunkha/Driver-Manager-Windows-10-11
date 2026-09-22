@@ -59,7 +59,7 @@ namespace Driver_Manager_Windows_10_11
         // =========================================================
         private Button? btnAbout;
         private Button? btnActivityLog;
-        private Label? lblAdminMode;
+        private ModeBadgeControl? modeBadge;
 
         // =========================================================
         // Constructor
@@ -1387,17 +1387,31 @@ namespace Driver_Manager_Windows_10_11
         // =========================================================
         private void InitializeUtilityUi()
         {
-            lblAdminMode = new Label
+            // =====================================================
+            // Administrator / Standard User badge
+            // =====================================================
+            modeBadge = new ModeBadgeControl
             {
-                AutoSize = false,
-                Location = new Point(22, 74),
-                Size = new Size(200, 28)
+                Name = "modeBadge",
+                Location = new Point(12, 74),
+                Size = new Size(221, 42)
             };
 
-            AdminModeStyle.Apply(lblAdminMode);
+            modeBadge.SetAdministratorMode(
+                AdminHelper.IsAdministrator());
 
-            pnlSidebar.Controls.Add(lblAdminMode);
-            lblAdminMode.BringToFront();
+            pnlSidebar.Controls.Add(modeBadge);
+            modeBadge.BringToFront();
+
+            // Compact status badge + balanced sidebar spacing.
+            lblDriversMenu.Location = new Point(20, 130);
+
+            btnSystemDrivers.Location = new Point(12, 148);
+            btnDriverStore.Location = new Point(12, 198);
+            btnPrinterDrivers.Location = new Point(12, 248);
+            btnPrinterPorts.Location = new Point(12, 298);
+            btnPrinters.Location = new Point(12, 348);
+            btnGhostPrinter.Location = new Point(12, 398);
 
             btnActivityLog = new Button
             {
