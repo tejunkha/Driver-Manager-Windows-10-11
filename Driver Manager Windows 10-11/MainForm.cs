@@ -61,6 +61,12 @@ namespace Driver_Manager_Windows_10_11
         {
             InitializeComponent();
 
+            // Action bar styling: medium Windows 10/11 icons
+            UiStyle.ApplyActionBar(this);
+
+            // Sidebar styling: medium icons + consistent spacing
+            UiStyle.ApplySidebar(this);
+
             HideGhostPrinterStatus();
 
             // เปิดรายละเอียดเมื่อดับเบิลคลิกแถว
@@ -1374,6 +1380,25 @@ namespace Driver_Manager_Windows_10_11
         }
 
         // =========================================================
+        // UI STYLE ACCESSORS
+        // =========================================================
+        internal Button GetRefreshButtonForStyle() => btnRefresh;
+
+        internal Button GetDeleteButtonForStyle() => btnDelete;
+
+        internal Button GetSystemDriversButtonForStyle() => btnSystemDrivers;
+
+        internal Button GetDriverStoreButtonForStyle() => btnDriverStore;
+
+        internal Button GetPrinterDriversButtonForStyle() => btnPrinterDrivers;
+
+        internal Button GetPrinterPortsButtonForStyle() => btnPrinterPorts;
+
+        internal Button GetPrintersButtonForStyle() => btnPrinters;
+
+        internal Button GetGhostPrinterButtonForStyle() => btnGhostPrinter;
+
+        // =========================================================
         // ACTION / DELETE
         // =========================================================
         private void dgvDrivers_SelectionChanged(
@@ -1420,30 +1445,36 @@ namespace Driver_Manager_Windows_10_11
 
             if (currentPage == "System Drivers")
             {
-                ThaiDialog.Info(
-                    "ไม่สามารถลบได้",
-                    "ไม่อนุญาตให้ลบ System Driver เพื่อความปลอดภัยของระบบ");
+                MessageBox.Show(
+                    "ไม่อนุญาตให้ลบ System Driver เพื่อความปลอดภัยของระบบ",
+                    "ลบไดรเวอร์",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
                 return;
             }
 
             if (!DriverActionService.IsAdministrator())
             {
-                ThaiDialog.Warning(
-                    "ต้องใช้สิทธิ์ผู้ดูแลระบบ",
-                    "การลบต้องใช้สิทธิ์ Administrator" + Environment.NewLine + Environment.NewLine +
-                    "กรุณาปิดโปรแกรม แล้วเปิดโปรแกรมด้วย Run as administrator จากนั้นลองใหม่อีกครั้ง");
+                MessageBox.Show(
+                    "การลบต้องใช้สิทธิ์ผู้ดูแลระบบ (Administrator)\n\n" +
+                    "กรุณาปิดโปรแกรม แล้วเปิดโปรแกรมด้วย Run as administrator จากนั้นลองใหม่อีกครั้ง",
+                    "ต้องใช้สิทธิ์ Administrator",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
                 return;
             }
 
             string itemName = GetDeleteItemName(tag);
             string warning = GetDeleteWarning(tag);
 
-            DialogResult confirm = ThaiDialog.Confirm(
-                "ยืนยันการลบ",
+            DialogResult confirm = MessageBox.Show(
                 warning + Environment.NewLine + Environment.NewLine +
                 $"รายการ: {itemName}" + Environment.NewLine + Environment.NewLine +
-                "การดำเนินการนี้ไม่สามารถย้อนกลับจาก Driver Manager ได้" + Environment.NewLine +
-                "ต้องการดำเนินการต่อหรือไม่?");
+                "การดำเนินการนี้ไม่สามารถย้อนกลับจาก Driver Manager ได้\nต้องการดำเนินการต่อหรือไม่?",
+                "ยืนยันการลบ",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2);
 
             if (confirm != DialogResult.Yes)
                 return;
@@ -1474,14 +1505,16 @@ namespace Driver_Manager_Windows_10_11
 
                     if (inUse)
                     {
-                        DialogResult secondConfirm = ThaiDialog.Confirm(
-                            "Printer Driver กำลังถูกใช้งาน",
+                        DialogResult secondConfirm = MessageBox.Show(
                             "Printer Driver นี้กำลังถูกใช้งานโดย:" +
                             Environment.NewLine + Environment.NewLine +
                             printersUsingDriver +
                             Environment.NewLine + Environment.NewLine +
-                            "การลบ Driver อาจส่งผลต่อ Printer เหล่านี้" + Environment.NewLine +
-                            "ต้องการดำเนินการต่อหรือไม่?");
+                            "การลบ Driver อาจส่งผลต่อ Printer เหล่านี้\nต้องการดำเนินการต่อหรือไม่?",
+                            "Printer Driver กำลังถูกใช้งาน",
+                            MessageBoxButtons.YesNo,
+                            MessageBoxIcon.Warning,
+                            MessageBoxDefaultButton.Button2);
 
                         if (secondConfirm != DialogResult.Yes)
                         {
@@ -1525,7 +1558,7 @@ namespace Driver_Manager_Windows_10_11
             catch (Exception ex)
             {
                 success = false;
-                message = "เกิดข้อผิดพลาดระหว่างการลบรายการ\n\nโปรดลองเปิดโปรแกรมด้วยสิทธิ์ Administrator แล้วลองอีกครั้ง";
+                message = "เกิดข้อผิดพลาดระหว่างการลบรายการ\n\n" + ex.Message;
             }
             finally
             {
@@ -1534,21 +1567,25 @@ namespace Driver_Manager_Windows_10_11
 
             if (success)
             {
-                ThaiDialog.Info(
-                    "ลบเสร็จสมบูรณ์",
+                MessageBox.Show(
                     string.IsNullOrWhiteSpace(message)
                         ? "ลบรายการเรียบร้อยแล้ว"
-                        : message);
+                        : message,
+                    "ลบเสร็จสมบูรณ์",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
 
                 await ReloadCurrentPageAsync();
             }
             else
             {
-                ThaiDialog.Error(
-                    "ลบไม่สำเร็จ",
+                MessageBox.Show(
                     string.IsNullOrWhiteSpace(message)
-                        ? "ไม่สามารถลบรายการนี้ได้\n\nกรุณาตรวจสอบสิทธิ์ Administrator และตรวจสอบว่ารายการนั้นกำลังถูกใช้งานอยู่หรือไม่"
-                        : message);
+                        ? "Windows ไม่สามารถดำเนินการลบรายการนี้ได้"
+                        : message,
+                    "ลบไม่สำเร็จ",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
 
                 btnRefresh.Enabled = true;
                 txtSearch.Enabled = true;
