@@ -1420,36 +1420,30 @@ namespace Driver_Manager_Windows_10_11
 
             if (currentPage == "System Drivers")
             {
-                MessageBox.Show(
-                    "System driver deletion is disabled for safety.",
-                    "Delete Driver",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information);
+                ThaiDialog.Info(
+                    "ไม่สามารถลบได้",
+                    "ไม่อนุญาตให้ลบ System Driver เพื่อความปลอดภัยของระบบ");
                 return;
             }
 
             if (!DriverActionService.IsAdministrator())
             {
-                MessageBox.Show(
-                    "Delete actions require Administrator privileges.\n\n" +
-                    "Close the application and run it as administrator, then try again.",
-                    "Administrator Required",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Warning);
+                ThaiDialog.Warning(
+                    "ต้องใช้สิทธิ์ผู้ดูแลระบบ",
+                    "การลบต้องใช้สิทธิ์ Administrator" + Environment.NewLine + Environment.NewLine +
+                    "กรุณาปิดโปรแกรม แล้วเปิดโปรแกรมด้วย Run as administrator จากนั้นลองใหม่อีกครั้ง");
                 return;
             }
 
             string itemName = GetDeleteItemName(tag);
             string warning = GetDeleteWarning(tag);
 
-            DialogResult confirm = MessageBox.Show(
+            DialogResult confirm = ThaiDialog.Confirm(
+                "ยืนยันการลบ",
                 warning + Environment.NewLine + Environment.NewLine +
-                $"Item: {itemName}" + Environment.NewLine + Environment.NewLine +
-                "This action cannot be undone from Driver Manager. Continue?",
-                "Confirm Delete",
-                MessageBoxButtons.YesNo,
-                MessageBoxIcon.Warning,
-                MessageBoxDefaultButton.Button2);
+                $"รายการ: {itemName}" + Environment.NewLine + Environment.NewLine +
+                "การดำเนินการนี้ไม่สามารถย้อนกลับจาก Driver Manager ได้" + Environment.NewLine +
+                "ต้องการดำเนินการต่อหรือไม่?");
 
             if (confirm != DialogResult.Yes)
                 return;
@@ -1463,7 +1457,7 @@ namespace Driver_Manager_Windows_10_11
                 btnDelete.Enabled = false;
                 btnRefresh.Enabled = false;
                 txtSearch.Enabled = false;
-                lblStatus.Text = "Deleting...";
+                lblStatus.Text = "กำลังลบ...";
 
                 if (tag is DriverStoreModel driverStore)
                 {
@@ -1480,20 +1474,18 @@ namespace Driver_Manager_Windows_10_11
 
                     if (inUse)
                     {
-                        DialogResult secondConfirm = MessageBox.Show(
-                            "This printer driver is currently used by:" +
+                        DialogResult secondConfirm = ThaiDialog.Confirm(
+                            "Printer Driver กำลังถูกใช้งาน",
+                            "Printer Driver นี้กำลังถูกใช้งานโดย:" +
                             Environment.NewLine + Environment.NewLine +
                             printersUsingDriver +
                             Environment.NewLine + Environment.NewLine +
-                            "Removing the driver may affect these printers. Continue?",
-                            "Printer Driver In Use",
-                            MessageBoxButtons.YesNo,
-                            MessageBoxIcon.Warning,
-                            MessageBoxDefaultButton.Button2);
+                            "การลบ Driver อาจส่งผลต่อ Printer เหล่านี้" + Environment.NewLine +
+                            "ต้องการดำเนินการต่อหรือไม่?");
 
                         if (secondConfirm != DialogResult.Yes)
                         {
-                            lblStatus.Text = "Delete cancelled";
+                            lblStatus.Text = "ยกเลิกการลบ";
                             return;
                         }
                     }
@@ -1527,13 +1519,13 @@ namespace Driver_Manager_Windows_10_11
                 else
                 {
                     success = false;
-                    message = "This item cannot be deleted.";
+                    message = "รายการนี้ไม่สามารถลบได้";
                 }
             }
             catch (Exception ex)
             {
                 success = false;
-                message = ex.Message;
+                message = "เกิดข้อผิดพลาดระหว่างการลบรายการ\n\nโปรดลองเปิดโปรแกรมด้วยสิทธิ์ Administrator แล้วลองอีกครั้ง";
             }
             finally
             {
@@ -1542,25 +1534,21 @@ namespace Driver_Manager_Windows_10_11
 
             if (success)
             {
-                MessageBox.Show(
+                ThaiDialog.Info(
+                    "ลบเสร็จสมบูรณ์",
                     string.IsNullOrWhiteSpace(message)
-                        ? "Delete completed successfully."
-                        : message,
-                    "Delete Completed",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information);
+                        ? "ลบรายการเรียบร้อยแล้ว"
+                        : message);
 
                 await ReloadCurrentPageAsync();
             }
             else
             {
-                MessageBox.Show(
+                ThaiDialog.Error(
+                    "ลบไม่สำเร็จ",
                     string.IsNullOrWhiteSpace(message)
-                        ? "Windows could not complete the delete operation."
-                        : message,
-                    "Delete Failed",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
+                        ? "ไม่สามารถลบรายการนี้ได้\n\nกรุณาตรวจสอบสิทธิ์ Administrator และตรวจสอบว่ารายการนั้นกำลังถูกใช้งานอยู่หรือไม่"
+                        : message);
 
                 btnRefresh.Enabled = true;
                 txtSearch.Enabled = true;
@@ -1587,39 +1575,42 @@ namespace Driver_Manager_Windows_10_11
                     ? ghostPrinter.DeviceId
                     : ghostPrinter.Name;
 
-            return "Selected item";
+            return "รายการที่เลือก";
         }
 
         private string GetDeleteWarning(object tag)
         {
             if (tag is DriverStoreModel)
             {
-                return "This removes the driver package from the Windows Driver Store. " +
-                       "Windows may uninstall it from devices using that package.";
+                return "การดำเนินการนี้จะลบ Driver Package ออกจาก Windows Driver Store\n" +
+                       "อุปกรณ์ที่ใช้ Driver Package นี้อาจได้รับผลกระทบ";
             }
 
             if (tag is PrinterDriverModel)
             {
-                return "This removes the printer driver. Other printers using this driver may be affected.";
+                return "การดำเนินการนี้จะลบ Printer Driver\n" +
+                       "Printer เครื่องอื่นที่ใช้ Driver นี้อาจได้รับผลกระทบ";
             }
 
             if (tag is PrinterPortModel)
             {
-                return "This removes the printer port. Printers using this port may stop working.";
+                return "การดำเนินการนี้จะลบ Printer Port\n" +
+                       "Printer ที่ใช้ Port นี้อาจไม่สามารถพิมพ์งานได้";
             }
 
             if (tag is InstalledPrinterModel)
             {
-                return "This removes the installed printer queue. It does not remove the printer driver.";
+                return "การดำเนินการนี้จะลบ Printer Queue ที่ติดตั้งอยู่\n" +
+                       "จะไม่ลบ Printer Driver";
             }
 
             if (tag is GhostPrinterModel)
             {
-                return "This removes the non-present printer device or stale printer queue. " +
-                       "It does not remove the Driver Store package.";
+                return "การดำเนินการนี้จะลบ Ghost Printer Device หรือ Printer Queue ที่ค้างอยู่\n" +
+                       "จะไม่ลบ Driver Package ออกจาก Driver Store";
             }
 
-            return "The selected item will be removed.";
+            return "รายการที่เลือกจะถูกลบออกจากระบบ";
         }
 
         private async Task ReloadCurrentPageAsync()

@@ -29,7 +29,7 @@ namespace Driver_Manager_Windows_10_11.Services
 
             if (!IsValidPublishedInf(driver.PublishedName))
             {
-                message = "Invalid Driver Store package name.";
+                message = "ชื่อ Driver Store Package ไม่ถูกต้อง";
                 return false;
             }
 
@@ -42,15 +42,12 @@ namespace Driver_Manager_Windows_10_11.Services
 
             if (exitCode == 0)
             {
-                message = string.IsNullOrWhiteSpace(output)
-                    ? $"Driver package {driver.PublishedName} was removed."
-                    : output.Trim();
+                message = $"ลบ Driver Package {driver.PublishedName} เรียบร้อยแล้ว";
                 return true;
             }
 
-            message = string.IsNullOrWhiteSpace(output)
-                ? $"Windows could not remove {driver.PublishedName}."
-                : output.Trim();
+            message = $"ไม่สามารถลบ Driver Package {driver.PublishedName} ได้\n\n" +
+                       "กรุณาตรวจสอบว่า Driver นี้กำลังถูกใช้งานอยู่หรือไม่ และเปิดโปรแกรมด้วยสิทธิ์ Administrator";
             return false;
         }
 
@@ -62,7 +59,7 @@ namespace Driver_Manager_Windows_10_11.Services
 
             if (string.IsNullOrWhiteSpace(driver.Name))
             {
-                message = "Printer driver name is empty.";
+                message = "ไม่พบชื่อ Printer Driver";
                 return false;
             }
 
@@ -70,7 +67,7 @@ namespace Driver_Manager_Windows_10_11.Services
             string script =
                 $"Import-Module PrintManagement -ErrorAction Stop; " +
                 $"Remove-PrinterDriver -Name '{name}' -RemoveFromDriverStore -Confirm:$false -ErrorAction Stop; " +
-                "Write-Output 'Printer driver removed successfully.';";
+                "Write-Output 'ลบ Printer Driver เรียบร้อยแล้ว';";
 
             return RunPowerShell(script, out message);
         }
@@ -83,7 +80,7 @@ namespace Driver_Manager_Windows_10_11.Services
 
             if (string.IsNullOrWhiteSpace(printer.Name))
             {
-                message = "Printer name is empty.";
+                message = "ไม่พบชื่อ Printer";
                 return false;
             }
 
@@ -91,7 +88,7 @@ namespace Driver_Manager_Windows_10_11.Services
             string script =
                 $"Import-Module PrintManagement -ErrorAction Stop; " +
                 $"Remove-Printer -Name '{name}' -Confirm:$false -ErrorAction Stop; " +
-                "Write-Output 'Printer removed successfully.';";
+                "Write-Output 'ลบ Printer เรียบร้อยแล้ว';";
 
             return RunPowerShell(script, out message);
         }
@@ -104,7 +101,7 @@ namespace Driver_Manager_Windows_10_11.Services
 
             if (string.IsNullOrWhiteSpace(port.Name))
             {
-                message = "Printer port name is empty.";
+                message = "ไม่พบชื่อ Printer Port";
                 return false;
             }
 
@@ -112,7 +109,7 @@ namespace Driver_Manager_Windows_10_11.Services
             string script =
                 $"Import-Module PrintManagement -ErrorAction Stop; " +
                 $"Remove-PrinterPort -Name '{name}' -Confirm:$false -ErrorAction Stop; " +
-                "Write-Output 'Printer port removed successfully.';";
+                "Write-Output 'ลบ Printer Port เรียบร้อยแล้ว';";
 
             return RunPowerShell(script, out message);
         }
@@ -137,15 +134,12 @@ namespace Driver_Manager_Windows_10_11.Services
 
                 if (exitCode == 0)
                 {
-                    message = string.IsNullOrWhiteSpace(output)
-                        ? "Ghost printer device removed successfully."
-                        : output.Trim();
+                    message = "ลบ Ghost Printer Device เรียบร้อยแล้ว";
                     return true;
                 }
 
-                message = string.IsNullOrWhiteSpace(output)
-                    ? "Windows could not remove the non-present printer device."
-                    : output.Trim();
+                message = "ไม่สามารถลบ Ghost Printer Device นี้ได้\n\n" +
+                           "กรุณาตรวจสอบสิทธิ์ Administrator และลอง Scan ใหม่อีกครั้ง";
                 return false;
             }
 
@@ -157,12 +151,12 @@ namespace Driver_Manager_Windows_10_11.Services
                 string script =
                     $"Import-Module PrintManagement -ErrorAction Stop; " +
                     $"Remove-Printer -Name '{name}' -Confirm:$false -ErrorAction Stop; " +
-                    "Write-Output 'Stale printer queue removed successfully.';";
+                    "Write-Output 'ลบ Printer Queue ที่ค้างอยู่เรียบร้อยแล้ว';";
 
                 return RunPowerShell(script, out message);
             }
 
-            message = "This ghost printer does not have a removable device ID or printer name.";
+            message = "Ghost Printer นี้ไม่มี Device ID หรือ Printer Name ที่สามารถลบได้";
             return false;
         }
 
@@ -238,17 +232,16 @@ namespace Driver_Manager_Windows_10_11.Services
                 out output,
                 60_000);
 
-            message = output.Trim();
+            string windowsOutput = output.Trim();
 
             if (exitCode == 0)
             {
-                if (string.IsNullOrWhiteSpace(message))
-                    message = "Operation completed successfully.";
+                message = "ดำเนินการเรียบร้อยแล้ว";
                 return true;
             }
 
-            if (string.IsNullOrWhiteSpace(message))
-                message = "Windows could not complete the operation.";
+            message = "ไม่สามารถดำเนินการตามคำสั่งได้\n\n" +
+                       "กรุณาตรวจสอบสิทธิ์ Administrator และตรวจสอบว่ารายการนั้นกำลังถูกใช้งานอยู่หรือไม่";
 
             return false;
         }
@@ -281,7 +274,7 @@ namespace Driver_Manager_Windows_10_11.Services
             if (!process.WaitForExit(timeoutMilliseconds))
             {
                 try { process.Kill(true); } catch { }
-                output = "Operation timed out.";
+                output = "การดำเนินการใช้เวลานานเกินกำหนด";
                 return -1;
             }
 
