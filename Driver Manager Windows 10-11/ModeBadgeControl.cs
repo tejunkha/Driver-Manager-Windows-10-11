@@ -23,6 +23,9 @@ namespace Driver_Manager_Windows_10_11
                 true);
 
             Font = new Font("Segoe UI", 9F);
+
+            // Control does not support Color.Transparent here.
+            // Use the sidebar color because the badge paints its full area anyway.
             BackColor = Color.FromArgb(30, 41, 59);
 
             toolTip = new ToolTip
@@ -35,6 +38,7 @@ namespace Driver_Manager_Windows_10_11
             UpdateTooltip();
         }
 
+        // Runtime-only method. No public serializable property is exposed.
         public void SetAdministratorMode(bool value)
         {
             if (isAdministrator == value)
@@ -50,6 +54,7 @@ namespace Driver_Manager_Windows_10_11
             base.OnPaint(e);
 
             Graphics g = e.Graphics;
+
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
 
@@ -59,105 +64,140 @@ namespace Driver_Manager_Windows_10_11
                 Math.Max(1, Width - 2),
                 Math.Max(1, Height - 2));
 
-            Color background = isAdministrator
-                ? Color.FromArgb(20, 83, 45)
-                : Color.FromArgb(120, 83, 10);
+            const int radius = 12;
 
-            Color border = isAdministrator
-                ? Color.FromArgb(34, 197, 94)
-                : Color.FromArgb(245, 158, 11);
+            Color background;
+            Color border;
+            Color subtitleColor;
 
-            using (GraphicsPath path = CreateRoundedRectangle(rect, 10))
+            if (isAdministrator)
+            {
+                background = Color.FromArgb(18, 95, 52);
+                border = Color.FromArgb(45, 220, 120);
+                subtitleColor = Color.FromArgb(205, 235, 218);
+            }
+            else
+            {
+                background = Color.FromArgb(105, 72, 8);
+                border = Color.FromArgb(245, 180, 35);
+                subtitleColor = Color.FromArgb(255, 230, 165);
+            }
+
+            using (GraphicsPath path = CreateRoundedRectangle(rect, radius))
             using (SolidBrush brush = new SolidBrush(background))
-            using (Pen pen = new Pen(border, 1F))
+            using (Pen pen = new Pen(border, 1.5F))
             {
                 g.FillPath(brush, path);
                 g.DrawPath(pen, path);
             }
 
-            DrawCompactIcon(g);
+            DrawModeIcon(g);
 
             using Font titleFont = new Font(
                 "Segoe UI Semibold",
-                9.5F,
+                10.5F,
                 FontStyle.Bold);
+
+            using Font subtitleFont = new Font(
+                "Segoe UI",
+                7.8F,
+                FontStyle.Regular);
 
             string title = isAdministrator
                 ? "ADMINISTRATOR"
                 : "STANDARD USER";
 
-            using Brush titleBrush = new SolidBrush(Color.White);
+            string subtitle = isAdministrator
+                ? "Full privileges available"
+                : "Some actions require administrator privileges";
+
+            using Brush titleBrush =
+                new SolidBrush(Color.White);
+
+            using Brush subtitleBrush =
+                new SolidBrush(subtitleColor);
 
             g.DrawString(
                 title,
                 titleFont,
                 titleBrush,
-                new PointF(47, 11));
+                new PointF(62, 16));
+
+            g.DrawString(
+                subtitle,
+                subtitleFont,
+                subtitleBrush,
+                new PointF(62, 40));
         }
 
-        private void DrawCompactIcon(Graphics g)
+        private void DrawModeIcon(Graphics g)
         {
             if (isAdministrator)
             {
                 DrawShield(
                     g,
-                    10,
-                    7,
-                    27,
-                    Color.FromArgb(34, 197, 94));
+                    14,
+                    14,
+                    38,
+                    Color.FromArgb(40, 210, 110));
 
-                using Pen checkPen = new Pen(Color.White, 2.2F);
+                using Pen checkPen =
+                    new Pen(Color.White, 3F);
+
                 checkPen.StartCap = LineCap.Round;
                 checkPen.EndCap = LineCap.Round;
 
+                PointF p1 = new PointF(24, 33);
+                PointF p2 = new PointF(31, 40);
+                PointF p3 = new PointF(43, 25);
+
                 g.DrawLines(
                     checkPen,
-                    new[]
-                    {
-                        new PointF(17, 19),
-                        new PointF(22, 24),
-                        new PointF(31, 14)
-                    });
+                    new[] { p1, p2, p3 });
             }
             else
             {
                 PointF[] triangle =
                 {
-                    new PointF(24, 7),
-                    new PointF(37, 30),
-                    new PointF(11, 30)
+                    new PointF(33, 14),
+                    new PointF(51, 48),
+                    new PointF(15, 48)
                 };
 
-                using Brush brush = new SolidBrush(
-                    Color.FromArgb(245, 158, 11));
+                using Brush warningBrush =
+                    new SolidBrush(Color.FromArgb(255, 193, 7));
 
-                using Pen pen = new Pen(
-                    Color.FromArgb(255, 211, 80),
-                    1F);
+                using Pen warningPen =
+                    new Pen(
+                        Color.FromArgb(255, 220, 90),
+                        1.5F);
 
-                g.FillPolygon(brush, triangle);
-                g.DrawPolygon(pen, triangle);
+                g.FillPolygon(warningBrush, triangle);
+                g.DrawPolygon(warningPen, triangle);
 
-                using Font exFont = new Font(
-                    "Segoe UI Semibold",
-                    12F,
-                    FontStyle.Bold);
+                using Font warningFont =
+                    new Font(
+                        "Segoe UI Semibold",
+                        18F,
+                        FontStyle.Bold);
 
-                using Brush exBrush = new SolidBrush(
-                    Color.FromArgb(92, 64, 6));
+                using Brush exclamationBrush =
+                    new SolidBrush(
+                        Color.FromArgb(80, 55, 0));
 
-                using StringFormat sf = new StringFormat
-                {
-                    Alignment = StringAlignment.Center,
-                    LineAlignment = StringAlignment.Center
-                };
+                using StringFormat format =
+                    new StringFormat
+                    {
+                        Alignment = StringAlignment.Center,
+                        LineAlignment = StringAlignment.Center
+                    };
 
                 g.DrawString(
                     "!",
-                    exFont,
-                    exBrush,
-                    new RectangleF(17, 8, 14, 20),
-                    sf);
+                    warningFont,
+                    exclamationBrush,
+                    new RectangleF(24, 20, 18, 25),
+                    format);
             }
         }
 
@@ -168,18 +208,38 @@ namespace Driver_Manager_Windows_10_11
             float size,
             Color color)
         {
+            float w = size;
+            float h = size;
+
             PointF[] shield =
             {
-                new PointF(x + size * 0.50F, y),
-                new PointF(x + size * 0.87F, y + size * 0.18F),
-                new PointF(x + size * 0.80F, y + size * 0.65F),
-                new PointF(x + size * 0.50F, y + size),
-                new PointF(x + size * 0.20F, y + size * 0.65F),
-                new PointF(x + size * 0.13F, y + size * 0.18F)
+                new PointF(
+                    x + w * 0.50F,
+                    y),
+
+                new PointF(
+                    x + w * 0.88F,
+                    y + h * 0.18F),
+
+                new PointF(
+                    x + w * 0.82F,
+                    y + h * 0.65F),
+
+                new PointF(
+                    x + w * 0.50F,
+                    y + h),
+
+                new PointF(
+                    x + w * 0.18F,
+                    y + h * 0.65F),
+
+                new PointF(
+                    x + w * 0.12F,
+                    y + h * 0.18F)
             };
 
             using Brush brush = new SolidBrush(color);
-            using Pen pen = new Pen(Color.White, 0.9F);
+            using Pen pen = new Pen(Color.White, 1.2F);
 
             g.FillPolygon(brush, shield);
             g.DrawPolygon(pen, shield);
@@ -190,12 +250,41 @@ namespace Driver_Manager_Windows_10_11
             int radius)
         {
             GraphicsPath path = new GraphicsPath();
-            int d = radius * 2;
 
-            path.AddArc(rect.X, rect.Y, d, d, 180, 90);
-            path.AddArc(rect.Right - d, rect.Y, d, d, 270, 90);
-            path.AddArc(rect.Right - d, rect.Bottom - d, d, d, 0, 90);
-            path.AddArc(rect.X, rect.Bottom - d, d, d, 90, 90);
+            int diameter = radius * 2;
+
+            path.AddArc(
+                rect.X,
+                rect.Y,
+                diameter,
+                diameter,
+                180,
+                90);
+
+            path.AddArc(
+                rect.Right - diameter,
+                rect.Y,
+                diameter,
+                diameter,
+                270,
+                90);
+
+            path.AddArc(
+                rect.Right - diameter,
+                rect.Bottom - diameter,
+                diameter,
+                diameter,
+                0,
+                90);
+
+            path.AddArc(
+                rect.X,
+                rect.Bottom - diameter,
+                diameter,
+                diameter,
+                90,
+                90);
+
             path.CloseFigure();
 
             return path;

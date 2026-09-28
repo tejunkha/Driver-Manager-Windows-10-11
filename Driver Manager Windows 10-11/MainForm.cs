@@ -321,7 +321,7 @@ namespace Driver_Manager_Windows_10_11
                 "Ghost Printer";
 
             lblPageDescription.Text =
-                "View non-present printer devices";
+                "Find and manage stale, duplicate, and disconnected printer queues";
 
             txtSearch.Clear();
             txtSearch.PlaceholderText =
@@ -613,37 +613,43 @@ namespace Driver_Manager_Windows_10_11
                 CreateColumn(
                     "colName",
                     "Printer Name",
-                    150));
+                    160));
 
             dgvDrivers.Columns.Add(
                 CreateColumn(
-                    "colDeviceId",
-                    "Device ID",
-                    200));
+                    "colDriver",
+                    "Driver",
+                    130));
 
             dgvDrivers.Columns.Add(
                 CreateColumn(
-                    "colManufacturer",
-                    "Manufacturer",
-                    100));
+                    "colPort",
+                    "Port",
+                    110));
 
             dgvDrivers.Columns.Add(
                 CreateColumn(
-                    "colClassGuid",
-                    "Class",
+                    "colType",
+                    "Type",
                     90));
 
             dgvDrivers.Columns.Add(
                 CreateColumn(
-                    "colStatus",
-                    "Status",
-                    90));
+                    "colDevice",
+                    "Device",
+                    145));
 
             dgvDrivers.Columns.Add(
                 CreateColumn(
-                    "colProblem",
-                    "Problem Code",
-                    80));
+                    "colState",
+                    "State",
+                    105));
+
+            dgvDrivers.Columns.Add(
+                CreateColumn(
+                    "colReason",
+                    "Reason",
+                    230));
         }
 
         // =========================================================
@@ -1051,7 +1057,7 @@ namespace Driver_Manager_Windows_10_11
                 txtSearch.Enabled = false;
 
                 lblStatus.Text =
-                    "Loading ghost printers...";
+                    "Scanning printer queues and devices...";
 
                 allGhostPrinters =
                     await Task.Run(() =>
@@ -1059,31 +1065,40 @@ namespace Driver_Manager_Windows_10_11
 
                 dgvDrivers.Rows.Clear();
 
-                foreach (GhostPrinterModel printer
-                    in allGhostPrinters)
+                foreach (GhostPrinterModel printer in allGhostPrinters)
                 {
-                    int row =
-                        dgvDrivers.Rows.Add(
-                            printer.Name,
-                            printer.DeviceId,
-                            printer.Manufacturer,
-                            printer.ClassGuid,
-                            printer.Status,
-                            printer.ProblemCode);
+                    int row = dgvDrivers.Rows.Add(
+                        printer.Name,
+                        printer.DriverName,
+                        printer.PortName,
+                        printer.PrinterType,
+                        printer.DeviceName,
+                        printer.State,
+                        printer.Reason);
 
                     dgvDrivers.Rows[row].Tag = printer;
 
+                    Color stateColor =
+                        printer.State.Equals("Duplicate / Copy", StringComparison.OrdinalIgnoreCase)
+                            ? Color.FromArgb(217, 119, 6)
+                            : printer.State.Equals("Stale Queue", StringComparison.OrdinalIgnoreCase)
+                                ? Color.FromArgb(180, 83, 9)
+                                : Color.FromArgb(220, 38, 38);
+
                     dgvDrivers.Rows[row]
-                        .Cells["colStatus"]
-                        .Style.ForeColor =
-                        Color.FromArgb(220, 38, 38);
+                        .Cells["colState"]
+                        .Style.ForeColor = stateColor;
+
+                    dgvDrivers.Rows[row]
+                        .Cells["colReason"]
+                        .ToolTipText = printer.Reason;
                 }
 
                 if (allGhostPrinters.Count == 0)
                 {
                     ShowGhostPrinterStatus(
                         "No Ghost Printer Found",
-                        "No disconnected printer devices detected.");
+                        "No stale, duplicate, or disconnected printer queues were detected.");
                 }
                 else
                 {
@@ -1092,7 +1107,7 @@ namespace Driver_Manager_Windows_10_11
 
                 lblStatus.Text =
                     allGhostPrinters.Count == 0
-                        ? "Ghost Printer    No disconnected printers"
+                        ? "Ghost Printer    No items requiring cleanup"
                         : $"Ghost Printer    {allGhostPrinters.Count} items";
             }
             catch (Exception ex)
@@ -1106,9 +1121,7 @@ namespace Driver_Manager_Windows_10_11
             {
                 btnRefresh.Enabled = true;
                 txtSearch.Enabled = true;
-
                 Cursor = Cursors.Default;
-
                 isLoading = false;
                 UpdateDeleteButtonState();
             }
@@ -1357,8 +1370,15 @@ namespace Driver_Manager_Windows_10_11
                     {
                         string searchText =
                             $"{printer.Name} " +
+                            $"{printer.DriverName} " +
+                            $"{printer.PortName} " +
+                            $"{printer.PrinterType} " +
+                            $"{printer.DeviceName} " +
                             $"{printer.DeviceId} " +
                             $"{printer.Manufacturer} " +
+                            $"{printer.State} " +
+                            $"{printer.Reason} " +
+                            $"{printer.ActionType} " +
                             $"{printer.ClassGuid} " +
                             $"{printer.Status} " +
                             $"{printer.ProblemCode} " +
@@ -1394,7 +1414,7 @@ namespace Driver_Manager_Windows_10_11
             {
                 Name = "modeBadge",
                 Location = new Point(12, 74),
-                Size = new Size(221, 42)
+                Size = new Size(221, 66)
             };
 
             modeBadge.SetAdministratorMode(
@@ -1403,15 +1423,15 @@ namespace Driver_Manager_Windows_10_11
             pnlSidebar.Controls.Add(modeBadge);
             modeBadge.BringToFront();
 
-            // Compact status badge + balanced sidebar spacing.
-            lblDriversMenu.Location = new Point(20, 130);
+            // Move the driver menu down so the status badge has room.
+            lblDriversMenu.Location = new Point(20, 152);
 
-            btnSystemDrivers.Location = new Point(12, 148);
-            btnDriverStore.Location = new Point(12, 198);
-            btnPrinterDrivers.Location = new Point(12, 248);
-            btnPrinterPorts.Location = new Point(12, 298);
-            btnPrinters.Location = new Point(12, 348);
-            btnGhostPrinter.Location = new Point(12, 398);
+            btnSystemDrivers.Location = new Point(12, 172);
+            btnDriverStore.Location = new Point(12, 222);
+            btnPrinterDrivers.Location = new Point(12, 272);
+            btnPrinterPorts.Location = new Point(12, 322);
+            btnPrinters.Location = new Point(12, 372);
+            btnGhostPrinter.Location = new Point(12, 422);
 
             btnActivityLog = new Button
             {
@@ -1564,8 +1584,8 @@ namespace Driver_Manager_Windows_10_11
                 return;
             }
 
-            if (!AdminHelper.RequireAdministrator(this, "Delete"))
-                return;
+            // Destructive actions elevate only the required Windows command.
+            // The main UI can remain in Standard User mode.
 
             string itemName = GetDeleteItemName(tag);
             string warning = GetDeleteWarning(tag);

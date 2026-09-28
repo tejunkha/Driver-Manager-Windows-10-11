@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.ComponentModel;
 using System.Management;
 using System.Security.Principal;
 using System.Text;
@@ -46,8 +47,9 @@ namespace Driver_Manager_Windows_10_11.Services
                 return true;
             }
 
-            message = $"ไม่สามารถลบ Driver Package {driver.PublishedName} ได้\n\n" +
-                       "กรุณาตรวจสอบว่า Driver นี้กำลังถูกใช้งานอยู่หรือไม่ และเปิดโปรแกรมด้วยสิทธิ์ Administrator";
+            message = string.IsNullOrWhiteSpace(output)
+                ? $"Windows ไม่สามารถลบ {driver.PublishedName} ได้"
+                : "Windows ไม่สามารถลบ Driver Package นี้ได้\n\nรายละเอียดจาก Windows:\n" + output.Trim();
             return false;
         }
 
@@ -67,7 +69,7 @@ namespace Driver_Manager_Windows_10_11.Services
             string script =
                 $"Import-Module PrintManagement -ErrorAction Stop; " +
                 $"Remove-PrinterDriver -Name '{name}' -RemoveFromDriverStore -Confirm:$false -ErrorAction Stop; " +
-                "Write-Output 'ลบ Printer Driver เรียบร้อยแล้ว';";
+                "Write-Output 'Printer driver removed successfully.';";
 
             return RunPowerShell(script, out message);
         }
@@ -88,7 +90,7 @@ namespace Driver_Manager_Windows_10_11.Services
             string script =
                 $"Import-Module PrintManagement -ErrorAction Stop; " +
                 $"Remove-Printer -Name '{name}' -Confirm:$false -ErrorAction Stop; " +
-                "Write-Output 'ลบ Printer เรียบร้อยแล้ว';";
+                "Write-Output 'Printer removed successfully.';";
 
             return RunPowerShell(script, out message);
         }
@@ -109,7 +111,7 @@ namespace Driver_Manager_Windows_10_11.Services
             string script =
                 $"Import-Module PrintManagement -ErrorAction Stop; " +
                 $"Remove-PrinterPort -Name '{name}' -Confirm:$false -ErrorAction Stop; " +
-                "Write-Output 'ลบ Printer Port เรียบร้อยแล้ว';";
+                "Write-Output 'Printer port removed successfully.';";
 
             return RunPowerShell(script, out message);
         }
@@ -120,15 +122,54 @@ namespace Driver_Manager_Windows_10_11.Services
         {
             message = "";
 
-            // Prefer removing the non-present PnP device. This does not delete
-            // the driver package from the Driver Store.
+            if (printer == null)
+            {
+                message = "ไม่พบข้อมูล Ghost Printer";
+                return false;
+            }
+
+            // ---------------------------------------------------------
+            // Queue cleanup
+            // ---------------------------------------------------------
+            // Stale Queue / Duplicate / Copy items should be removed from
+            // the Windows printer queue. This is what makes old "Copy 1",
+            // "Copy 2", etc. disappear from Devices and Printers.
+            if (string.Equals(
+                    printer.ActionType,
+                    "Queue",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                if (string.IsNullOrWhiteSpace(printer.Name))
+                {
+                    message = "ไม่พบชื่อ Printer Queue";
+                    return false;
+                }
+
+                string name = ToPowerShellSingleQuoted(printer.Name);
+                string script =
+                    $"Import-Module PrintManagement -ErrorAction Stop; " +
+                    $"Remove-Printer -Name '{name}' -Confirm:$false -ErrorAction Stop; " +
+                    "Write-Output 'Printer queue removed successfully.';";
+
+                bool removed = RunPowerShell(script, out message);
+
+                if (removed && string.IsNullOrWhiteSpace(message))
+                    message = $"ลบ Printer Queue '{printer.Name}' เรียบร้อยแล้ว";
+
+                return removed;
+            }
+
+            // ---------------------------------------------------------
+            // Disconnected PnP device cleanup
+            // ---------------------------------------------------------
             if (!string.IsNullOrWhiteSpace(printer.DeviceId))
             {
-                string deviceId = printer.DeviceId.Trim();
+                string deviceId = printer.DeviceId.Trim().Replace("\"", "");
                 string output;
+
                 int exitCode = RunProcess(
                     "pnputil.exe",
-                    $"/remove-device \"{deviceId.Replace("\"", "")}" + "\"",
+                    $"/remove-device \"{deviceId}\"",
                     out output,
                     60_000);
 
@@ -138,20 +179,21 @@ namespace Driver_Manager_Windows_10_11.Services
                     return true;
                 }
 
-                message = "ไม่สามารถลบ Ghost Printer Device นี้ได้\n\n" +
-                           "กรุณาตรวจสอบสิทธิ์ Administrator และลอง Scan ใหม่อีกครั้ง";
+                message = string.IsNullOrWhiteSpace(output)
+                    ? "Windows ไม่สามารถลบ Ghost Printer Device นี้ได้"
+                    : "Windows ไม่สามารถลบ Ghost Printer Device นี้ได้\n\nรายละเอียดจาก Windows:\n" + output.Trim();
+
                 return false;
             }
 
-            // Some stale printer queues may not expose a PnP device ID.
-            // In that case remove the printer queue itself.
+            // Last resort: if there is no PnP ID, try the printer queue name.
             if (!string.IsNullOrWhiteSpace(printer.Name))
             {
                 string name = ToPowerShellSingleQuoted(printer.Name);
                 string script =
                     $"Import-Module PrintManagement -ErrorAction Stop; " +
                     $"Remove-Printer -Name '{name}' -Confirm:$false -ErrorAction Stop; " +
-                    "Write-Output 'ลบ Printer Queue ที่ค้างอยู่เรียบร้อยแล้ว';";
+                    "Write-Output 'Printer queue removed successfully.';";
 
                 return RunPowerShell(script, out message);
             }
@@ -240,8 +282,9 @@ namespace Driver_Manager_Windows_10_11.Services
                 return true;
             }
 
-            message = "ไม่สามารถดำเนินการตามคำสั่งได้\n\n" +
-                       "กรุณาตรวจสอบสิทธิ์ Administrator และตรวจสอบว่ารายการนั้นกำลังถูกใช้งานอยู่หรือไม่";
+            message = string.IsNullOrWhiteSpace(windowsOutput)
+                ? "Windows ไม่สามารถดำเนินการตามคำสั่งได้"
+                : "Windows ไม่สามารถดำเนินการตามคำสั่งได้\n\nรายละเอียดจาก Windows:\n" + windowsOutput;
 
             return false;
         }
@@ -252,37 +295,84 @@ namespace Driver_Manager_Windows_10_11.Services
             out string output,
             int timeoutMilliseconds)
         {
-            using var process = new Process();
+            output = string.Empty;
 
-            process.StartInfo = new ProcessStartInfo
+            bool needsElevation = !IsAdministrator();
+
+            try
             {
-                FileName = fileName,
-                Arguments = arguments,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                CreateNoWindow = true,
-                StandardOutputEncoding = Encoding.Unicode,
-                StandardErrorEncoding = Encoding.Unicode
-            };
+                using var process = new Process();
 
-            process.Start();
+                if (needsElevation)
+                {
+                    // Keep the main Driver Manager running normally and
+                    // elevate only the destructive Windows operation.
+                    // This triggers the standard Windows UAC prompt.
+                    process.StartInfo = new ProcessStartInfo
+                    {
+                        FileName = fileName,
+                        Arguments = arguments,
+                        UseShellExecute = true,
+                        Verb = "runas",
+                        WindowStyle = ProcessWindowStyle.Hidden
+                    };
 
-            string standardOutput = process.StandardOutput.ReadToEnd();
-            string standardError = process.StandardError.ReadToEnd();
+                    process.Start();
 
-            if (!process.WaitForExit(timeoutMilliseconds))
-            {
-                try { process.Kill(true); } catch { }
-                output = "การดำเนินการใช้เวลานานเกินกำหนด";
-                return -1;
+                    if (!process.WaitForExit(timeoutMilliseconds))
+                    {
+                        try { process.Kill(true); } catch { }
+                        output = "การดำเนินการใช้เวลานานเกินกำหนด";
+                        return -1;
+                    }
+
+                    output = process.ExitCode == 0
+                        ? "ดำเนินการด้วยสิทธิ์ Administrator เรียบร้อยแล้ว"
+                        : "Windows ไม่สามารถดำเนินการด้วยสิทธิ์ Administrator ได้";
+
+                    return process.ExitCode;
+                }
+
+                process.StartInfo = new ProcessStartInfo
+                {
+                    FileName = fileName,
+                    Arguments = arguments,
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    CreateNoWindow = true,
+                    StandardOutputEncoding = Encoding.Unicode,
+                    StandardErrorEncoding = Encoding.Unicode
+                };
+
+                process.Start();
+
+                string standardOutput = process.StandardOutput.ReadToEnd();
+                string standardError = process.StandardError.ReadToEnd();
+
+                if (!process.WaitForExit(timeoutMilliseconds))
+                {
+                    try { process.Kill(true); } catch { }
+                    output = "การดำเนินการใช้เวลานานเกินกำหนด";
+                    return -1;
+                }
+
+                output = string.IsNullOrWhiteSpace(standardError)
+                    ? standardOutput
+                    : standardOutput + Environment.NewLine + standardError;
+
+                return process.ExitCode;
             }
-
-            output = string.IsNullOrWhiteSpace(standardError)
-                ? standardOutput
-                : standardOutput + Environment.NewLine + standardError;
-
-            return process.ExitCode;
+            catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
+            {
+                output = "ผู้ใช้ยกเลิกการยกระดับสิทธิ์ Administrator";
+                return 1223;
+            }
+            catch (Exception ex)
+            {
+                output = ex.Message;
+                return -2;
+            }
         }
 
         private static string ToPowerShellSingleQuoted(string value)
