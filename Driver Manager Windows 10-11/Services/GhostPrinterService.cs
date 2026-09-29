@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Management;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Driver_Manager_Windows_10_11.Models;
@@ -11,11 +12,15 @@ using Driver_Manager_Windows_10_11.Models;
 namespace Driver_Manager_Windows_10_11.Services
 {
     /// <summary>
-    /// Detects printer queues/devices that need manual cleanup.
+    /// Ghost Printer scanner.
     ///
-    /// A "Ghost Printer" is NOT limited to a disconnected PnP device.
-    /// This service also detects stale printer queues and duplicate/copy queues
-    /// that remain installed in Windows after hardware is removed/reinstalled.
+    /// Important design:
+    /// - Get-Printer is the primary source for installed printer queues.
+    /// - Win32_Printer is used only to enrich queue information such as PNP ID.
+    /// - Win32_PnPEntity also includes Printer and PrintQueue classes so stale
+    ///   PnP print entries can be found even when they are not in Win32_Printer.
+    /// - Offline alone is NOT considered Ghost. Duplicate/copy queues,
+    ///   missing ports, and disconnected PnP entries are.
     /// </summary>
     public static class GhostPrinterService
     {
@@ -27,17 +32,18 @@ namespace Driver_Manager_Windows_10_11.Services
             public string Name { get; set; } = "";
             public string DriverName { get; set; } = "";
             public string PortName { get; set; } = "";
-            public string PnpDeviceId { get; set; } = "";
-            public string DeviceId { get; set; } = "";
+            public string DeviceUrl { get; set; } = "";
+            public string ComputerName { get; set; } = "";
+            public string Type { get; set; } = "";
             public string Status { get; set; } = "";
+            public string PnpDeviceId { get; set; } = "";
             public bool WorkOffline { get; set; }
             public bool Local { get; set; }
             public bool Network { get; set; }
             public bool IsDefault { get; set; }
             public bool Shared { get; set; }
-            public string ServerName { get; set; } = "";
+            public bool Published { get; set; }
             public uint PrinterStatus { get; set; }
-            public uint Availability { get; set; }
         }
 
         private sealed class PnpDeviceInfo
@@ -45,147 +51,207 @@ namespace Driver_Manager_Windows_10_11.Services
             public string Name { get; set; } = "";
             public string DeviceId { get; set; } = "";
             public string Manufacturer { get; set; } = "";
-            public string ClassName { get; set; } = "Printer";
-            public string ClassGuid { get; set; } = PrinterClassGuid;
+            public string ClassName { get; set; } = "";
+            public string ClassGuid { get; set; } = "";
+            public bool Present { get; set; }
             public uint ProblemCode { get; set; }
+            public string Status { get; set; } = "";
         }
 
-        /// <summary>
-        /// Returns printer queues/devices that are likely stale, duplicated,
-        /// or disconnected. Normal healthy queues are not returned.
-        /// </summary>
         public static List<GhostPrinterModel> GetGhostPrinters()
         {
             var result = new List<GhostPrinterModel>();
 
-            List<PnpDeviceInfo> disconnectedDevices = GetDisconnectedPnpPrinters();
-            Dictionary<string, string> presentPnpNames = GetPresentPnpDevices();
+            // ---------------------------------------------------------
+            // 1. Installed print queues - primary source
+            // ---------------------------------------------------------
             List<PrinterQueueInfo> queues = GetInstalledPrinterQueues();
-            Dictionary<string, string> driverProviders = GetPrinterDriverProviders();
 
             // ---------------------------------------------------------
-            // 1) Stale / disconnected printer queues
+            // 2. WMI enrichment: PNPDeviceID / Local / Network / Status
             // ---------------------------------------------------------
+            Dictionary<string, PrinterQueueInfo> wmiQueues =
+                GetWmiPrinterQueues();
+
             foreach (PrinterQueueInfo queue in queues)
             {
-                if (IsVirtualPrinter(queue.Name, queue.DriverName, queue.PortName))
-                    continue;
-
-                bool pnpKnown = !string.IsNullOrWhiteSpace(queue.PnpDeviceId);
-                bool pnpPresent =
-                    pnpKnown &&
-                    presentPnpNames.ContainsKey(queue.PnpDeviceId);
-
-                bool localPhysical =
-                    queue.Local &&
-                    !queue.Network &&
-                    IsPhysicalPrinterPort(queue.PortName);
-
-                // Only flag a queue as disconnected when we have a meaningful
-                // physical/local correlation. A normal TCP/IP network printer
-                // that is simply offline must not become a Ghost Printer.
-                bool disconnectedQueue =
-                    localPhysical &&
-                    pnpKnown &&
-                    !pnpPresent;
-
-                // Some old USB queues lose their PNPDeviceID entirely.
-                // For these, require a clearly physical port before flagging.
-                bool staleQueueWithoutPnpId =
-                    localPhysical &&
-                    !pnpKnown &&
-                    !IsLikelyNetworkPort(queue.PortName);
-
-                if (!disconnectedQueue && !staleQueueWithoutPnpId)
-                    continue;
-
-                string provider = ResolveProvider(queue.DriverName, driverProviders);
-                string deviceName = ResolveDeviceName(
-                    queue.PnpDeviceId,
-                    queue.Name,
-                    presentPnpNames);
-
-                string state = disconnectedQueue
-                    ? "Disconnected"
-                    : "Stale Queue";
-
-                string reason = disconnectedQueue
-                    ? "Printer queue remains installed, but its physical PnP printer device is no longer present"
-                    : "Printer queue remains installed without a current physical PnP device association";
-
-                result.Add(new GhostPrinterModel
+                if (wmiQueues.TryGetValue(
+                        queue.Name,
+                        out PrinterQueueInfo? wmi))
                 {
-                    Name = queue.Name,
-                    DriverName = queue.DriverName,
-                    PortName = queue.PortName,
-                    PrinterType = DetectPrinterType(queue.PortName, queue.Network),
-                    DeviceName = deviceName,
-                    DeviceId = queue.PnpDeviceId,
-                    Manufacturer = provider,
-                    State = state,
-                    Reason = reason,
-                    ActionType = "Queue",
-                    ClassGuid = "PrintQueue",
-                    Status = string.IsNullOrWhiteSpace(queue.Status)
-                        ? state
-                        : queue.Status,
-                    ProblemCode = 0,
-                    Description = reason,
-                    IsDefault = queue.IsDefault,
-                    IsNetwork = queue.Network,
-                    WorkOffline = queue.WorkOffline
-                });
+                    if (string.IsNullOrWhiteSpace(queue.PnpDeviceId))
+                        queue.PnpDeviceId = wmi.PnpDeviceId;
+
+                    if (string.IsNullOrWhiteSpace(queue.Status))
+                        queue.Status = wmi.Status;
+
+                    queue.Local = wmi.Local;
+                    queue.Network = wmi.Network;
+                }
+            }
+
+            // If Get-Printer is unavailable, WMI still gives us queues.
+            if (queues.Count == 0)
+            {
+                queues.AddRange(wmiQueues.Values);
             }
 
             // ---------------------------------------------------------
-            // 2) Duplicate / Copy queues
+            // 3. Current / stale PnP printer devices
             // ---------------------------------------------------------
-            AddDuplicateQueueCandidates(queues, result, driverProviders);
+            List<PnpDeviceInfo> pnpDevices = GetAllPrinterPnpDevices();
 
-            // ---------------------------------------------------------
-            // 3) Disconnected PnP devices that are still registered
-            // ---------------------------------------------------------
-            foreach (PnpDeviceInfo device in disconnectedDevices)
+            var pnpById = new Dictionary<string, PnpDeviceInfo>(
+                StringComparer.OrdinalIgnoreCase);
+
+            foreach (PnpDeviceInfo device in pnpDevices)
             {
-                // If there is already a queue row carrying the same PNP ID,
-                // keep the queue row. The queue action is more useful because
-                // it removes the item that remains visible under Printers.
-                bool alreadyRepresented = false;
-
-                foreach (GhostPrinterModel item in result)
+                if (!string.IsNullOrWhiteSpace(device.DeviceId) &&
+                    !pnpById.ContainsKey(device.DeviceId))
                 {
-                    if (!string.IsNullOrWhiteSpace(device.DeviceId) &&
-                        !string.IsNullOrWhiteSpace(item.DeviceId) &&
-                        device.DeviceId.Equals(
-                            item.DeviceId,
-                            StringComparison.OrdinalIgnoreCase))
-                    {
-                        alreadyRepresented = true;
-                        break;
-                    }
+                    pnpById.Add(device.DeviceId, device);
+                }
+            }
+
+            // ---------------------------------------------------------
+            // 4. Detect queue problems
+            // ---------------------------------------------------------
+            Dictionary<string, string> driverProviders =
+                GetPrinterDriverProviders();
+
+            HashSet<string> installedPorts =
+                GetInstalledPrinterPorts();
+
+            foreach (PrinterQueueInfo queue in queues)
+            {
+                if (IsVirtualPrinter(
+                        queue.Name,
+                        queue.DriverName,
+                        queue.PortName))
+                {
+                    continue;
                 }
 
-                if (alreadyRepresented)
+                // A direct match is the strongest PnP correlation.
+                PnpDeviceInfo? matchedPnp = null;
+                if (!string.IsNullOrWhiteSpace(queue.PnpDeviceId))
+                {
+                    pnpById.TryGetValue(
+                        queue.PnpDeviceId,
+                        out matchedPnp);
+                }
+
+                bool hasPhysicalPort =
+                    IsPhysicalPrinterPort(queue.PortName);
+
+                bool isConnection =
+                    IsNetworkConnection(queue);
+
+                // A physical queue whose referenced PnP device is known but
+                // no longer present is a disconnected queue.
+                bool disconnectedByPnp =
+                    !isConnection &&
+                    hasPhysicalPort &&
+                    matchedPnp != null &&
+                    !matchedPnp.Present;
+
+                // Some old queues lose their PNPDeviceID completely. If the
+                // queue still references a physical USB/WSD/DOT4/TCPIP port
+                // that is no longer installed, treat it as a stale queue.
+                bool missingPhysicalPort =
+                    !isConnection &&
+                    hasPhysicalPort &&
+                    !string.IsNullOrWhiteSpace(queue.PortName) &&
+                    installedPorts.Count > 0 &&
+                    !installedPorts.Contains(queue.PortName);
+
+                // No PNP ID + physical queue is still a useful stale candidate
+                // when the current PnP database contains no matching name.
+                bool staleWithoutPnp =
+                    !isConnection &&
+                    hasPhysicalPort &&
+                    string.IsNullOrWhiteSpace(queue.PnpDeviceId) &&
+                    !HasPresentPnpName(queue.Name, pnpDevices);
+
+                if (disconnectedByPnp)
+                {
+                    AddQueueResult(
+                        result,
+                        queue,
+                        driverProviders,
+                        "Disconnected",
+                        "Printer queue remains installed, but its physical PnP printer device is not present.");
+                }
+                else if (missingPhysicalPort)
+                {
+                    AddQueueResult(
+                        result,
+                        queue,
+                        driverProviders,
+                        "Stale Queue",
+                        $"Printer queue references port '{queue.PortName}', but that printer port is no longer installed.");
+                }
+                else if (staleWithoutPnp)
+                {
+                    AddQueueResult(
+                        result,
+                        queue,
+                        driverProviders,
+                        "Stale Queue",
+                        "Printer queue remains installed but has no current physical PnP printer association.");
+                }
+            }
+
+            // ---------------------------------------------------------
+            // 5. Duplicate / Copy queues
+            // ---------------------------------------------------------
+            DetectDuplicateQueues(
+                queues,
+                result,
+                driverProviders);
+
+            // ---------------------------------------------------------
+            // 6. PnP-only stale print devices
+            // ---------------------------------------------------------
+            foreach (PnpDeviceInfo device in pnpDevices)
+            {
+                if (device.Present)
                     continue;
+
+                if (string.IsNullOrWhiteSpace(device.DeviceId))
+                    continue;
+
+                if (AlreadyRepresentedByDeviceId(
+                        result,
+                        device.DeviceId))
+                {
+                    continue;
+                }
 
                 result.Add(new GhostPrinterModel
                 {
-                    Name = device.Name,
+                    Name = string.IsNullOrWhiteSpace(device.Name)
+                        ? "Unknown Printer Device"
+                        : device.Name,
                     DriverName = "",
                     PortName = "",
-                    PrinterType = "PnP Printer",
+                    PrinterType = string.IsNullOrWhiteSpace(device.ClassName)
+                        ? "Printer"
+                        : device.ClassName,
                     DeviceName = device.Name,
                     DeviceId = device.DeviceId,
                     Manufacturer = device.Manufacturer,
                     State = "Disconnected Device",
-                    Reason = "Windows still has a disconnected printer PnP device registered",
+                    Reason = "Windows still has a non-present Printer / PrintQueue PnP device registered.",
                     ActionType = "PNP",
                     ClassGuid = string.IsNullOrWhiteSpace(device.ClassName)
                         ? device.ClassGuid
                         : device.ClassName,
-                    Status = "Disconnected",
+                    Status = string.IsNullOrWhiteSpace(device.Status)
+                        ? "Disconnected"
+                        : device.Status,
                     ProblemCode = device.ProblemCode,
-                    Description = "Disconnected printer PnP device",
+                    Description = "Disconnected Printer / PrintQueue PnP device",
                     IsDefault = false,
                     IsNetwork = false,
                     WorkOffline = false
@@ -197,82 +263,241 @@ namespace Driver_Manager_Windows_10_11.Services
         }
 
         // =============================================================
-        // Installed printer queues
+        // PrintManagement: Get-Printer
         // =============================================================
         private static List<PrinterQueueInfo> GetInstalledPrinterQueues()
         {
             var result = new List<PrinterQueueInfo>();
 
-            using var searcher = new ManagementObjectSearcher(
-                @"SELECT Name, DriverName, PortName, PNPDeviceID, DeviceID,
-                         PrinterStatus, WorkOffline, Availability,
-                         Local, Network, Default, Shared, ServerName, Status
-                  FROM Win32_Printer");
+            const string script = @"
+$ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
-            using ManagementObjectCollection printers = searcher.Get();
+Import-Module PrintManagement -ErrorAction Stop
 
-            foreach (ManagementObject printer in printers)
+Get-Printer -Full |
+    Select-Object Name,
+                  DriverName,
+                  PortName,
+                  ComputerName,
+                  Type,
+                  PrinterStatus,
+                  WorkOffline,
+                  Shared,
+                  Published,
+                  Default,
+                  DeviceURL |
+    ConvertTo-Json -Depth 4 -Compress
+";
+
+            try
             {
-                string name = GetString(printer, "Name");
-                if (string.IsNullOrWhiteSpace(name))
-                    continue;
+                string json = RunPowerShell(script, 20_000);
 
-                result.Add(new PrinterQueueInfo
+                if (string.IsNullOrWhiteSpace(json))
+                    return result;
+
+                using JsonDocument document = JsonDocument.Parse(json);
+                JsonElement root = document.RootElement;
+
+                if (root.ValueKind == JsonValueKind.Array)
                 {
-                    Name = name,
-                    DriverName = GetString(printer, "DriverName"),
-                    PortName = GetString(printer, "PortName"),
-                    PnpDeviceId = GetString(printer, "PNPDeviceID"),
-                    DeviceId = GetString(printer, "DeviceID"),
-                    PrinterStatus = GetUInt32(printer, "PrinterStatus"),
-                    WorkOffline = GetBool(printer, "WorkOffline"),
-                    Availability = GetUInt32(printer, "Availability"),
-                    Local = GetBool(printer, "Local"),
-                    Network = GetBool(printer, "Network"),
-                    IsDefault = GetBool(printer, "Default"),
-                    Shared = GetBool(printer, "Shared"),
-                    ServerName = GetString(printer, "ServerName"),
-                    Status = GetString(printer, "Status")
-                });
+                    foreach (JsonElement item in root.EnumerateArray())
+                    {
+                        AddPowerShellQueue(item, result);
+                    }
+                }
+                else if (root.ValueKind == JsonValueKind.Object)
+                {
+                    AddPowerShellQueue(root, result);
+                }
+            }
+            catch
+            {
+                // WMI fallback is handled by the caller.
             }
 
             return result;
         }
 
-        private static Dictionary<string, string> GetPrinterDriverProviders()
+        private static void AddPowerShellQueue(
+            JsonElement item,
+            List<PrinterQueueInfo> result)
         {
-            var result = new Dictionary<string, string>(
+            string name = JsonString(item, "Name");
+            if (string.IsNullOrWhiteSpace(name))
+                return;
+
+            result.Add(new PrinterQueueInfo
+            {
+                Name = name,
+                DriverName = JsonString(item, "DriverName"),
+                PortName = JsonString(item, "PortName"),
+                ComputerName = JsonString(item, "ComputerName"),
+                Type = JsonString(item, "Type"),
+                DeviceUrl = JsonString(item, "DeviceURL"),
+                Status = JsonString(item, "PrinterStatus"),
+                PrinterStatus = JsonUInt32(item, "PrinterStatus"),
+                WorkOffline = JsonBool(item, "WorkOffline"),
+                Shared = JsonBool(item, "Shared"),
+                Published = JsonBool(item, "Published"),
+                IsDefault = JsonBool(item, "Default"),
+                Network = IsNetworkPort(JsonString(item, "PortName")) ||
+                          JsonString(item, "Type").Contains(
+                              "Connection",
+                              StringComparison.OrdinalIgnoreCase)
+            });
+        }
+
+        // =============================================================
+        // WMI fallback / enrichment
+        // =============================================================
+        private static Dictionary<string, PrinterQueueInfo>
+            GetWmiPrinterQueues()
+        {
+            var result = new Dictionary<string, PrinterQueueInfo>(
                 StringComparer.OrdinalIgnoreCase);
 
             try
             {
                 using var searcher = new ManagementObjectSearcher(
-                    "SELECT Name, DriverName, ProviderName FROM Win32_PrinterDriver");
+                    @"SELECT Name, DriverName, PortName, PNPDeviceID,
+                             PrinterStatus, WorkOffline, Local, Network,
+                             Default, Shared, ServerName, Status
+                      FROM Win32_Printer");
 
-                using ManagementObjectCollection collection = searcher.Get();
+                using ManagementObjectCollection collection =
+                    searcher.Get();
 
-                foreach (ManagementObject driver in collection)
+                foreach (ManagementObject printer in collection)
                 {
-                    string name = GetString(driver, "Name");
-                    string driverName = GetString(driver, "DriverName");
-                    string provider = GetString(driver, "ProviderName");
+                    string name = GetString(printer, "Name");
+                    if (string.IsNullOrWhiteSpace(name))
+                        continue;
 
-                    if (!string.IsNullOrWhiteSpace(name) &&
-                        !result.ContainsKey(name))
+                    var queue = new PrinterQueueInfo
                     {
-                        result[name] = provider;
-                    }
+                        Name = name,
+                        DriverName = GetString(printer, "DriverName"),
+                        PortName = GetString(printer, "PortName"),
+                        PnpDeviceId = GetString(printer, "PNPDeviceID"),
+                        PrinterStatus = GetUInt32(printer, "PrinterStatus"),
+                        WorkOffline = GetBool(printer, "WorkOffline"),
+                        Local = GetBool(printer, "Local"),
+                        Network = GetBool(printer, "Network"),
+                        IsDefault = GetBool(printer, "Default"),
+                        Shared = GetBool(printer, "Shared"),
+                        ComputerName = GetString(printer, "ServerName"),
+                        Status = GetString(printer, "Status")
+                    };
 
-                    if (!string.IsNullOrWhiteSpace(driverName) &&
-                        !result.ContainsKey(driverName))
-                    {
-                        result[driverName] = provider;
-                    }
+                    result[name] = queue;
                 }
             }
             catch
             {
-                // Provider is optional.
+            }
+
+            return result;
+        }
+
+        // =============================================================
+        // PnP printer + PrintQueue devices
+        // =============================================================
+        private static List<PnpDeviceInfo> GetAllPrinterPnpDevices()
+        {
+            var result = new List<PnpDeviceInfo>();
+
+            try
+            {
+                using var searcher = new ManagementObjectSearcher(
+                    $@"SELECT Name, DeviceID, Manufacturer, PNPClass,
+                              ClassGuid, Present, ConfigManagerErrorCode, Status
+                       FROM Win32_PnPEntity
+                       WHERE PNPClass = 'Printer'
+                          OR PNPClass = 'PrintQueue'
+                          OR ClassGuid = '{PrinterClassGuid}'");
+
+                using ManagementObjectCollection collection =
+                    searcher.Get();
+
+                foreach (ManagementObject device in collection)
+                {
+                    string id = GetString(device, "DeviceID");
+                    string name = GetString(device, "Name");
+
+                    if (string.IsNullOrWhiteSpace(id) &&
+                        string.IsNullOrWhiteSpace(name))
+                    {
+                        continue;
+                    }
+
+                    result.Add(new PnpDeviceInfo
+                    {
+                        Name = name,
+                        DeviceId = id,
+                        Manufacturer = GetString(device, "Manufacturer"),
+                        ClassName = GetString(device, "PNPClass"),
+                        ClassGuid = GetString(device, "ClassGuid"),
+                        Present = GetBool(device, "Present"),
+                        ProblemCode = GetUInt32(device, "ConfigManagerErrorCode"),
+                        Status = GetString(device, "Status")
+                    });
+                }
+            }
+            catch
+            {
+                // Optional correlation source.
+            }
+
+            return result;
+        }
+
+        // =============================================================
+        // Installed printer ports
+        // =============================================================
+        private static HashSet<string> GetInstalledPrinterPorts()
+        {
+            var result = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+
+            const string script = @"
+$ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+Import-Module PrintManagement -ErrorAction Stop
+Get-PrinterPort |
+    Select-Object -ExpandProperty Name |
+    ConvertTo-Json -Compress
+";
+
+            try
+            {
+                string json = RunPowerShell(script, 15_000);
+
+                if (string.IsNullOrWhiteSpace(json))
+                    return result;
+
+                using JsonDocument document = JsonDocument.Parse(json);
+                JsonElement root = document.RootElement;
+
+                if (root.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (JsonElement item in root.EnumerateArray())
+                    {
+                        string value = item.ToString().Trim();
+                        if (!string.IsNullOrWhiteSpace(value))
+                            result.Add(value);
+                    }
+                }
+                else if (root.ValueKind == JsonValueKind.String)
+                {
+                    string value = root.GetString() ?? "";
+                    if (!string.IsNullOrWhiteSpace(value))
+                        result.Add(value.Trim());
+                }
+            }
+            catch
+            {
             }
 
             return result;
@@ -281,35 +506,58 @@ namespace Driver_Manager_Windows_10_11.Services
         // =============================================================
         // Duplicate detection
         // =============================================================
-        private static void AddDuplicateQueueCandidates(
+        private static void DetectDuplicateQueues(
             List<PrinterQueueInfo> queues,
             List<GhostPrinterModel> result,
-            Dictionary<string, string> driverProviders)
+            Dictionary<string, string> providers)
         {
-            var candidates = new List<PrinterQueueInfo>();
+            var usable = new List<PrinterQueueInfo>();
 
             foreach (PrinterQueueInfo queue in queues)
             {
-                if (IsVirtualPrinter(queue.Name, queue.DriverName, queue.PortName))
-                    continue;
-
-                candidates.Add(queue);
+                if (!IsVirtualPrinter(
+                        queue.Name,
+                        queue.DriverName,
+                        queue.PortName))
+                {
+                    usable.Add(queue);
+                }
             }
 
-            // Group primarily by normalized printer name + driver.
-            var nameGroups = new Dictionary<string, List<PrinterQueueInfo>>(
+            // A) Explicit Copy 1 / Copy 2 / Copy 3 is always surfaced.
+            foreach (PrinterQueueInfo queue in usable)
+            {
+                if (!HasCopyLikeSuffix(queue.Name))
+                    continue;
+
+                AddOrUpdateResult(
+                    result,
+                    queue,
+                    providers,
+                    "Duplicate / Copy",
+                    "Printer name has a Copy suffix and is a duplicate-queue candidate.");
+            }
+
+            // B) Same base printer name.
+            var nameGroups = new Dictionary<
+                string,
+                List<PrinterQueueInfo>>(
                 StringComparer.OrdinalIgnoreCase);
 
-            foreach (PrinterQueueInfo queue in candidates)
+            foreach (PrinterQueueInfo queue in usable)
             {
-                string key =
-                    NormalizePrinterBaseName(queue.Name) + "|" +
-                    NormalizeDriver(queue.DriverName);
+                string baseName =
+                    NormalizePrinterBaseName(queue.Name);
 
-                if (!nameGroups.TryGetValue(key, out List<PrinterQueueInfo>? group))
+                if (string.IsNullOrWhiteSpace(baseName))
+                    continue;
+
+                if (!nameGroups.TryGetValue(
+                        baseName,
+                        out List<PrinterQueueInfo>? group))
                 {
                     group = new List<PrinterQueueInfo>();
-                    nameGroups[key] = group;
+                    nameGroups.Add(baseName, group);
                 }
 
                 group.Add(queue);
@@ -320,36 +568,34 @@ namespace Driver_Manager_Windows_10_11.Services
                 if (group.Count < 2)
                     continue;
 
-                PrinterQueueInfo canonical = ChooseCanonicalQueue(group);
+                PrinterQueueInfo canonical =
+                    ChooseCanonical(group);
 
                 foreach (PrinterQueueInfo queue in group)
                 {
                     if (ReferenceEquals(queue, canonical))
                         continue;
 
-                    if (!HasCopyLikeSuffix(queue.Name) &&
-                        !SamePortAs(queue, canonical))
-                    {
-                        continue;
-                    }
-
-                    AddOrUpgradeDuplicate(
+                    AddOrUpdateResult(
                         result,
                         queue,
-                        driverProviders,
+                        providers,
                         "Duplicate / Copy",
-                        "Duplicate printer queue detected. Another installed queue uses the same printer identity.");
+                        $"Another printer queue with the same base name exists: '{canonical.Name}'.");
                 }
             }
 
-            // Secondary grouping: same driver + same port.
-            var portGroups = new Dictionary<string, List<PrinterQueueInfo>>(
+            // C) Same driver + same port.
+            // This catches stale duplicates whose names were manually renamed.
+            var technicalGroups = new Dictionary<
+                string,
+                List<PrinterQueueInfo>>(
                 StringComparer.OrdinalIgnoreCase);
 
-            foreach (PrinterQueueInfo queue in candidates)
+            foreach (PrinterQueueInfo queue in usable)
             {
-                string driver = NormalizeDriver(queue.DriverName);
-                string port = NormalizePort(queue.PortName);
+                string driver = NormalizeText(queue.DriverName);
+                string port = NormalizeText(queue.PortName);
 
                 if (string.IsNullOrWhiteSpace(driver) ||
                     string.IsNullOrWhiteSpace(port))
@@ -359,109 +605,41 @@ namespace Driver_Manager_Windows_10_11.Services
 
                 string key = driver + "|" + port;
 
-                if (!portGroups.TryGetValue(key, out List<PrinterQueueInfo>? group))
+                if (!technicalGroups.TryGetValue(
+                        key,
+                        out List<PrinterQueueInfo>? group))
                 {
                     group = new List<PrinterQueueInfo>();
-                    portGroups[key] = group;
+                    technicalGroups.Add(key, group);
                 }
 
                 group.Add(queue);
             }
 
-            foreach (List<PrinterQueueInfo> group in portGroups.Values)
+            foreach (List<PrinterQueueInfo> group in technicalGroups.Values)
             {
                 if (group.Count < 2)
                     continue;
 
-                PrinterQueueInfo canonical = ChooseCanonicalQueue(group);
+                PrinterQueueInfo canonical =
+                    ChooseCanonical(group);
 
                 foreach (PrinterQueueInfo queue in group)
                 {
                     if (ReferenceEquals(queue, canonical))
                         continue;
 
-                    // Only surface this as a duplicate candidate when the
-                    // names are clearly related or the queue has a copy suffix.
-                    bool relatedName =
-                        NormalizePrinterBaseName(queue.Name).Equals(
-                            NormalizePrinterBaseName(canonical.Name),
-                            StringComparison.OrdinalIgnoreCase);
-
-                    if (!relatedName && !HasCopyLikeSuffix(queue.Name))
-                        continue;
-
-                    AddOrUpgradeDuplicate(
+                    AddOrUpdateResult(
                         result,
                         queue,
-                        driverProviders,
-                        "Duplicate / Copy",
-                        "Another printer queue uses the same driver and printer port.");
+                        providers,
+                        "Duplicate Candidate",
+                        $"Another queue uses the same driver and port as '{canonical.Name}'.");
                 }
             }
         }
 
-        private static void AddOrUpgradeDuplicate(
-            List<GhostPrinterModel> result,
-            PrinterQueueInfo queue,
-            Dictionary<string, string> driverProviders,
-            string state,
-            string reason)
-        {
-            GhostPrinterModel? existing = null;
-
-            foreach (GhostPrinterModel item in result)
-            {
-                if (item.ActionType == "Queue" &&
-                    item.Name.Equals(queue.Name, StringComparison.OrdinalIgnoreCase))
-                {
-                    existing = item;
-                    break;
-                }
-            }
-
-            string provider = ResolveProvider(queue.DriverName, driverProviders);
-            string deviceName = string.IsNullOrWhiteSpace(queue.PnpDeviceId)
-                ? queue.Name
-                : queue.PnpDeviceId;
-
-            if (existing == null)
-            {
-                result.Add(new GhostPrinterModel
-                {
-                    Name = queue.Name,
-                    DriverName = queue.DriverName,
-                    PortName = queue.PortName,
-                    PrinterType = DetectPrinterType(queue.PortName, queue.Network),
-                    DeviceName = deviceName,
-                    DeviceId = queue.PnpDeviceId,
-                    Manufacturer = provider,
-                    State = state,
-                    Reason = reason,
-                    ActionType = "Queue",
-                    ClassGuid = "PrintQueue",
-                    Status = string.IsNullOrWhiteSpace(queue.Status)
-                        ? state
-                        : queue.Status,
-                    ProblemCode = 0,
-                    Description = reason,
-                    IsDefault = queue.IsDefault,
-                    IsNetwork = queue.Network,
-                    WorkOffline = queue.WorkOffline
-                });
-
-                return;
-            }
-
-            existing.State = state;
-            existing.Reason =
-                existing.Reason.Contains(reason, StringComparison.OrdinalIgnoreCase)
-                    ? existing.Reason
-                    : existing.Reason + " | " + reason;
-
-            existing.Description = existing.Reason;
-        }
-
-        private static PrinterQueueInfo ChooseCanonicalQueue(
+        private static PrinterQueueInfo ChooseCanonical(
             List<PrinterQueueInfo> group)
         {
             foreach (PrinterQueueInfo queue in group)
@@ -472,18 +650,20 @@ namespace Driver_Manager_Windows_10_11.Services
 
             foreach (PrinterQueueInfo queue in group)
             {
-                if (!queue.WorkOffline)
+                if (!HasCopyLikeSuffix(queue.Name) &&
+                    !queue.WorkOffline)
+                {
                     return queue;
+                }
             }
 
-            // Prefer the shortest base name. Copy 1/2/3 normally become
-            // the longer names, so the original queue tends to stay canonical.
             PrinterQueueInfo best = group[0];
             int bestLength = NormalizePrinterBaseName(best.Name).Length;
 
             foreach (PrinterQueueInfo queue in group)
             {
                 int length = NormalizePrinterBaseName(queue.Name).Length;
+
                 if (length < bestLength)
                 {
                     best = queue;
@@ -494,13 +674,239 @@ namespace Driver_Manager_Windows_10_11.Services
             return best;
         }
 
-        private static bool SamePortAs(
-            PrinterQueueInfo a,
-            PrinterQueueInfo b)
+        private static void AddOrUpdateResult(
+            List<GhostPrinterModel> result,
+            PrinterQueueInfo queue,
+            Dictionary<string, string> providers,
+            string state,
+            string reason)
         {
-            return NormalizePort(a.PortName).Equals(
-                NormalizePort(b.PortName),
-                StringComparison.OrdinalIgnoreCase);
+            GhostPrinterModel? existing = null;
+
+            foreach (GhostPrinterModel item in result)
+            {
+                if (item.ActionType == "Queue" &&
+                    item.Name.Equals(
+                        queue.Name,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    existing = item;
+                    break;
+                }
+            }
+
+            string provider =
+                ResolveProvider(queue.DriverName, providers);
+
+            if (existing == null)
+            {
+                result.Add(CreateQueueModel(
+                    queue,
+                    provider,
+                    state,
+                    reason));
+                return;
+            }
+
+            if (!existing.Reason.Contains(
+                    reason,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                existing.Reason +=
+                    string.IsNullOrWhiteSpace(existing.Reason)
+                        ? reason
+                        : " " + reason;
+            }
+
+            existing.Description = existing.Reason;
+
+            // A real disconnect/stale state is stronger than a duplicate hint.
+            if (state == "Disconnected" ||
+                state == "Stale Queue")
+            {
+                existing.State = state;
+            }
+            else if (existing.State == "")
+            {
+                existing.State = state;
+            }
+        }
+
+        private static void AddQueueResult(
+            List<GhostPrinterModel> result,
+            PrinterQueueInfo queue,
+            Dictionary<string, string> providers,
+            string state,
+            string reason)
+        {
+            AddOrUpdateResult(
+                result,
+                queue,
+                providers,
+                state,
+                reason);
+        }
+
+        private static GhostPrinterModel CreateQueueModel(
+            PrinterQueueInfo queue,
+            string provider,
+            string state,
+            string reason)
+        {
+            return new GhostPrinterModel
+            {
+                Name = queue.Name,
+                DriverName = queue.DriverName,
+                PortName = queue.PortName,
+                PrinterType = DetectPrinterType(
+                    queue.PortName,
+                    queue.Network),
+                DeviceName = string.IsNullOrWhiteSpace(queue.PnpDeviceId)
+                    ? queue.Name
+                    : queue.PnpDeviceId,
+                DeviceId = queue.PnpDeviceId,
+                Manufacturer = provider,
+                State = state,
+                Reason = reason,
+                ActionType = "Queue",
+                ClassGuid = "PrintQueue",
+                Status = string.IsNullOrWhiteSpace(queue.Status)
+                    ? state
+                    : queue.Status,
+                ProblemCode = 0,
+                Description = reason,
+                IsDefault = queue.IsDefault,
+                IsNetwork = queue.Network,
+                WorkOffline = queue.WorkOffline
+            };
+        }
+
+        // =============================================================
+        // Helpers: classification
+        // =============================================================
+        private static bool IsNetworkConnection(
+            PrinterQueueInfo queue)
+        {
+            if (queue.Network)
+                return true;
+
+            if (queue.Type.Contains(
+                    "Connection",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (queue.PortName.StartsWith(
+                    "\\\\",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(queue.ComputerName) &&
+                !string.Equals(
+                    queue.ComputerName,
+                    Environment.MachineName,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool IsNetworkPort(string portName)
+        {
+            return portName.StartsWith(
+                       "\\\\",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   portName.StartsWith(
+                       "IPP",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   portName.StartsWith(
+                       "HTTP",
+                       StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsPhysicalPrinterPort(string portName)
+        {
+            if (string.IsNullOrWhiteSpace(portName))
+                return false;
+
+            string value = portName.Trim();
+
+            if (value.StartsWith("USB", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            if (value.StartsWith("DOT4", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            if (value.StartsWith("WSD", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            if (value.StartsWith("IP_", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            if (value.StartsWith("TCPIP_", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            if (Regex.IsMatch(
+                    value,
+                    @"^\d{1,3}(\.\d{1,3}){3}(:\d+)?$"))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool HasPresentPnpName(
+            string printerName,
+            List<PnpDeviceInfo> devices)
+        {
+            foreach (PnpDeviceInfo device in devices)
+            {
+                if (!device.Present)
+                    continue;
+
+                if (string.IsNullOrWhiteSpace(device.Name))
+                    continue;
+
+                if (device.Name.Equals(
+                        printerName,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+
+                if (NormalizePrinterBaseName(device.Name).Equals(
+                        NormalizePrinterBaseName(printerName),
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool AlreadyRepresentedByDeviceId(
+            List<GhostPrinterModel> result,
+            string deviceId)
+        {
+            foreach (GhostPrinterModel item in result)
+            {
+                if (!string.IsNullOrWhiteSpace(item.DeviceId) &&
+                    item.DeviceId.Equals(
+                        deviceId,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static bool HasCopyLikeSuffix(string name)
@@ -510,22 +916,20 @@ namespace Driver_Manager_Windows_10_11.Services
 
             return Regex.IsMatch(
                 name.Trim(),
-                @"(?:\s+Copy(?:\s*\d+)?)$|(?:\s*\(Copy\s*\d*\))$",
+                @"(?:\s+[-–—]?\s*Copy(?:\s*\d+)?)$|(?:\s*\(Copy\s*\d*\))$",
                 RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         }
 
-        private static string NormalizePrinterBaseName(string name)
+        private static string NormalizePrinterBaseName(
+            string name)
         {
-            string value = name?.Trim() ?? "";
+            string value = NormalizeText(name);
 
-            if (value.Length == 0)
-                return "";
-
-            for (int i = 0; i < 3; i++)
+            for (int i = 0; i < 4; i++)
             {
                 value = Regex.Replace(
                     value,
-                    @"\s+Copy(?:\s*\d+)?$",
+                    @"(?:\s+[-–—]?\s*Copy(?:\s*\d+)?)$",
                     "",
                     RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
@@ -534,20 +938,170 @@ namespace Driver_Manager_Windows_10_11.Services
                     @"\s*\(Copy\s*\d*\)$",
                     "",
                     RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-
             }
 
             return NormalizeText(value);
         }
 
-        private static string NormalizeDriver(string driverName)
+        private static string DetectPrinterType(
+            string portName,
+            bool network)
         {
-            return NormalizeText(driverName);
+            if (network ||
+                portName.StartsWith("\\\\", StringComparison.OrdinalIgnoreCase))
+                return "Network";
+
+            if (portName.StartsWith("WSD", StringComparison.OrdinalIgnoreCase))
+                return "WSD";
+
+            if (portName.StartsWith("USB", StringComparison.OrdinalIgnoreCase))
+                return "USB";
+
+            if (portName.StartsWith("DOT4", StringComparison.OrdinalIgnoreCase))
+                return "DOT4";
+
+            if (portName.StartsWith("IP_", StringComparison.OrdinalIgnoreCase) ||
+                portName.StartsWith("TCPIP_", StringComparison.OrdinalIgnoreCase) ||
+                Regex.IsMatch(portName, @"^\d{1,3}(\.\d{1,3}){3}"))
+            {
+                return "TCP/IP";
+            }
+
+            if (portName.StartsWith("IPP", StringComparison.OrdinalIgnoreCase) ||
+                portName.StartsWith("HTTP", StringComparison.OrdinalIgnoreCase))
+                return "IPP";
+
+            return "PrintQueue";
         }
 
-        private static string NormalizePort(string portName)
+        private static bool IsVirtualPrinter(
+            string name,
+            string driver,
+            string port)
         {
-            return NormalizeText(portName);
+            string[] values =
+            {
+                name,
+                driver,
+                port
+            };
+
+            string[] virtualNames =
+            {
+                "Microsoft Print to PDF",
+                "Microsoft XPS Document Writer",
+                "Fax",
+                "OneNote",
+                "Send To OneNote",
+                "Microsoft Shared Fax Driver",
+                "Microsoft Software Printer"
+            };
+
+            foreach (string value in values)
+            {
+                foreach (string virtualName in virtualNames)
+                {
+                    if (value.Contains(
+                            virtualName,
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return port.Equals(
+                       "PORTPROMPT:",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   port.Equals(
+                       "FILE:",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   port.Equals(
+                       "NUL:",
+                       StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static Dictionary<string, string>
+            GetPrinterDriverProviders()
+        {
+            var result = new Dictionary<string, string>(
+                StringComparer.OrdinalIgnoreCase);
+
+            try
+            {
+                using var searcher = new ManagementObjectSearcher(
+                    "SELECT Name, DriverName, ProviderName FROM Win32_PrinterDriver");
+
+                using ManagementObjectCollection collection =
+                    searcher.Get();
+
+                foreach (ManagementObject driver in collection)
+                {
+                    string name = GetString(driver, "Name");
+                    string driverName = GetString(driver, "DriverName");
+                    string provider = GetString(driver, "ProviderName");
+
+                    if (!string.IsNullOrWhiteSpace(name))
+                        result[name] = provider;
+
+                    if (!string.IsNullOrWhiteSpace(driverName))
+                        result[driverName] = provider;
+                }
+            }
+            catch
+            {
+            }
+
+            return result;
+        }
+
+        private static string ResolveProvider(
+            string driverName,
+            Dictionary<string, string> providers)
+        {
+            if (!string.IsNullOrWhiteSpace(driverName) &&
+                providers.TryGetValue(
+                    driverName,
+                    out string? value) &&
+                !string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+
+            string[] vendors =
+            {
+                "HP",
+                "Canon",
+                "Epson",
+                "Brother",
+                "Xerox",
+                "Ricoh",
+                "Kyocera",
+                "Konica Minolta",
+                "Lexmark",
+                "Pantum",
+                "Fuji Xerox",
+                "Samsung"
+            };
+
+            foreach (string vendor in vendors)
+            {
+                if (driverName.Contains(
+                        vendor,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return vendor;
+                }
+            }
+
+            if (driverName.Contains(
+                    "Microsoft",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return "Microsoft";
+            }
+
+            return "Unknown";
         }
 
         private static string NormalizeText(string value)
@@ -559,106 +1113,77 @@ namespace Driver_Manager_Windows_10_11.Services
                 RegexOptions.CultureInvariant).Trim();
         }
 
-        // =============================================================
-        // PnP presence
-        // =============================================================
-        private static Dictionary<string, string> GetPresentPnpDevices()
+        private static void SortResult(
+            List<GhostPrinterModel> list)
         {
-            var result = new Dictionary<string, string>(
-                StringComparer.OrdinalIgnoreCase);
-
-            try
+            list.Sort((a, b) =>
             {
-                using var searcher = new ManagementObjectSearcher(
-                    @"SELECT Name, DeviceID, PNPClass, ClassGuid, ConfigManagerErrorCode
-                      FROM Win32_PnPEntity
-                      WHERE PNPClass = 'Printer'
-                         OR ClassGuid = '{4D36E979-E325-11CE-BFC1-08002BE10318}'");
+                int state =
+                    StateOrder(a.State).CompareTo(
+                        StateOrder(b.State));
 
-                using ManagementObjectCollection collection = searcher.Get();
+                if (state != 0)
+                    return state;
 
-                foreach (ManagementObject device in collection)
-                {
-                    string id = GetString(device, "DeviceID");
-                    string name = GetString(device, "Name");
-                    uint problem = GetUInt32(device, "ConfigManagerErrorCode");
-
-                    if (string.IsNullOrWhiteSpace(id) || problem != 0)
-                        continue;
-
-                    result[id] = name;
-                }
-            }
-            catch
-            {
-                // PnP correlation is advisory.
-            }
-
-            return result;
+                return string.Compare(
+                    a.Name,
+                    b.Name,
+                    StringComparison.OrdinalIgnoreCase);
+            });
         }
 
-        private static string ResolveDeviceName(
-            string deviceId,
-            string fallbackName,
-            Dictionary<string, string> presentPnpNames)
+        private static int StateOrder(string state)
         {
-            if (!string.IsNullOrWhiteSpace(deviceId) &&
-                presentPnpNames.TryGetValue(deviceId, out string? presentName) &&
-                !string.IsNullOrWhiteSpace(presentName))
+            return state switch
             {
-                return presentName;
-            }
-
-            return string.IsNullOrWhiteSpace(deviceId)
-                ? fallbackName
-                : deviceId;
+                "Disconnected" => 0,
+                "Stale Queue" => 1,
+                "Duplicate / Copy" => 2,
+                "Duplicate Candidate" => 3,
+                "Disconnected Device" => 4,
+                _ => 5
+            };
         }
 
         // =============================================================
-        // Disconnected PnP devices via pnputil
+        // PowerShell helper
         // =============================================================
-        private static List<PnpDeviceInfo> GetDisconnectedPnpPrinters()
+        private static string RunPowerShell(
+            string script,
+            int timeout)
         {
-            string pnputilPath = Path.Combine(
-                Environment.SystemDirectory,
-                "pnputil.exe");
+            string encoded = Convert.ToBase64String(
+                Encoding.Unicode.GetBytes(script));
 
-            if (!File.Exists(pnputilPath))
-                return new List<PnpDeviceInfo>();
-
-            string output = RunPnpUtil(pnputilPath);
-
-            if (string.IsNullOrWhiteSpace(output))
-                return new List<PnpDeviceInfo>();
-
-            return ParsePnpOutput(output);
-        }
-
-        private static string RunPnpUtil(string pnputilPath)
-        {
-            var startInfo = new ProcessStartInfo
+            var info = new ProcessStartInfo
             {
-                FileName = pnputilPath,
-                Arguments = $"/enum-devices /disconnected /class \"{PrinterClassGuid}\"",
+                FileName = "powershell.exe",
+                Arguments =
+                    "-NoLogo -NoProfile -NonInteractive " +
+                    "-ExecutionPolicy Bypass " +
+                    "-EncodedCommand " + encoded,
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
-                StandardOutputEncoding = Encoding.Default,
-                StandardErrorEncoding = Encoding.Default
+                StandardOutputEncoding = Encoding.UTF8,
+                StandardErrorEncoding = Encoding.UTF8
             };
 
             using var process = new Process
             {
-                StartInfo = startInfo
+                StartInfo = info
             };
 
             process.Start();
 
-            Task<string> outputTask = process.StandardOutput.ReadToEndAsync();
-            Task<string> errorTask = process.StandardError.ReadToEndAsync();
+            Task<string> outputTask =
+                process.StandardOutput.ReadToEndAsync();
 
-            if (!process.WaitForExit(10000))
+            Task<string> errorTask =
+                process.StandardError.ReadToEndAsync();
+
+            if (!process.WaitForExit(timeout))
             {
                 try
                 {
@@ -671,353 +1196,89 @@ namespace Driver_Manager_Windows_10_11.Services
                 return "";
             }
 
-            string output = outputTask.GetAwaiter().GetResult();
-            string error = errorTask.GetAwaiter().GetResult();
+            string output =
+                outputTask.GetAwaiter().GetResult();
 
             if (process.ExitCode != 0)
+            {
                 return "";
-
-            string combined = string.IsNullOrWhiteSpace(output)
-                ? error
-                : output;
-
-            if (ContainsNoMatchingDevices(combined))
-                return "";
+            }
 
             return output.Trim();
         }
 
-        private static List<PnpDeviceInfo> ParsePnpOutput(string output)
-        {
-            var result = new List<PnpDeviceInfo>();
-
-            string normalized = output
-                .Replace("\r\n", "\n")
-                .Replace('\r', '\n');
-
-            if (ContainsNoMatchingDevices(normalized))
-                return result;
-
-            string[] blocks = Regex.Split(
-                normalized.Trim(),
-                @"\n\s*\n");
-
-            foreach (string block in blocks)
-            {
-                PnpDeviceInfo? item = ParsePnpBlock(block);
-                if (item == null)
-                    continue;
-
-                bool duplicate = false;
-                foreach (PnpDeviceInfo existing in result)
-                {
-                    if (!string.IsNullOrWhiteSpace(item.DeviceId) &&
-                        existing.DeviceId.Equals(
-                            item.DeviceId,
-                            StringComparison.OrdinalIgnoreCase))
-                    {
-                        duplicate = true;
-                        break;
-                    }
-                }
-
-                if (!duplicate)
-                    result.Add(item);
-            }
-
-            return result;
-        }
-
-        private static PnpDeviceInfo? ParsePnpBlock(string block)
-        {
-            if (string.IsNullOrWhiteSpace(block))
-                return null;
-
-            string[] lines = block.Split(
-                '\n',
-                StringSplitOptions.RemoveEmptyEntries);
-
-            string instanceId = "";
-            string description = "";
-            string manufacturer = "";
-            string className = "Printer";
-            string classGuid = PrinterClassGuid;
-            uint problemCode = 0;
-
-            foreach (string rawLine in lines)
-            {
-                string line = rawLine.Trim();
-                if (line.Length == 0)
-                    continue;
-
-                if (IsNoiseLine(line))
-                    continue;
-
-                int colon = line.IndexOf(':');
-                if (colon < 0)
-                    continue;
-
-                string label = line[..colon].Trim();
-                string value = line[(colon + 1)..].Trim();
-
-                if (label.Equals("Instance ID", StringComparison.OrdinalIgnoreCase))
-                    instanceId = value;
-                else if (label.Equals("Device Description", StringComparison.OrdinalIgnoreCase))
-                    description = value;
-                else if (label.Equals("Manufacturer Name", StringComparison.OrdinalIgnoreCase))
-                    manufacturer = value;
-                else if (label.Equals("Class Name", StringComparison.OrdinalIgnoreCase))
-                    className = value;
-                else if (label.Equals("Class GUID", StringComparison.OrdinalIgnoreCase))
-                    classGuid = value;
-                else if (label.Equals("Problem Code", StringComparison.OrdinalIgnoreCase))
-                    problemCode = ParseProblemCode(value);
-            }
-
-            if (string.IsNullOrWhiteSpace(instanceId))
-            {
-                foreach (string rawLine in lines)
-                {
-                    string value = rawLine.Trim();
-                    if (LooksLikeInstanceId(value))
-                    {
-                        instanceId = value;
-                        break;
-                    }
-                }
-            }
-
-            if (string.IsNullOrWhiteSpace(description))
-            {
-                foreach (string rawLine in lines)
-                {
-                    string value = rawLine.Trim();
-                    if (string.IsNullOrWhiteSpace(value) ||
-                        IsNoiseLine(value) ||
-                        LooksLikeInstanceId(value) ||
-                        LooksLikeGuid(value) ||
-                        LooksLikeProblemCode(value))
-                    {
-                        continue;
-                    }
-
-                    description = value;
-                    break;
-                }
-            }
-
-            if (string.IsNullOrWhiteSpace(instanceId) &&
-                string.IsNullOrWhiteSpace(description))
-            {
-                return null;
-            }
-
-            return new PnpDeviceInfo
-            {
-                Name = string.IsNullOrWhiteSpace(description)
-                    ? "Unknown Printer Device"
-                    : description,
-                DeviceId = instanceId,
-                Manufacturer = manufacturer,
-                ClassName = className,
-                ClassGuid = classGuid,
-                ProblemCode = problemCode
-            };
-        }
-
         // =============================================================
-        // Classification helpers
+        // JSON helpers
         // =============================================================
-        private static string ResolveProvider(
-            string driverName,
-            Dictionary<string, string> providerMap)
+        private static string JsonString(
+            JsonElement item,
+            string property)
         {
-            if (!string.IsNullOrWhiteSpace(driverName) &&
-                providerMap.TryGetValue(driverName, out string? provider) &&
-                !string.IsNullOrWhiteSpace(provider))
+            if (!item.TryGetProperty(
+                    property,
+                    out JsonElement value))
             {
-                return provider;
+                return "";
             }
 
-            if (string.IsNullOrWhiteSpace(driverName))
-                return "Unknown";
+            if (value.ValueKind == JsonValueKind.Null)
+                return "";
 
-            string[] vendors =
-            {
-                "HP", "Canon", "Epson", "Brother", "Xerox", "Ricoh",
-                "Kyocera", "Konica Minolta", "Lexmark", "Fuji Xerox", "Pantum"
-            };
-
-            foreach (string vendor in vendors)
-            {
-                if (driverName.Contains(vendor, StringComparison.OrdinalIgnoreCase))
-                    return vendor;
-            }
-
-            if (driverName.Contains("Microsoft", StringComparison.OrdinalIgnoreCase))
-                return "Microsoft";
-
-            return "Unknown";
+            return value.ToString().Trim();
         }
 
-        private static string DetectPrinterType(string portName, bool network)
+        private static bool JsonBool(
+            JsonElement item,
+            string property)
         {
-            if (network || IsLikelyNetworkPort(portName))
+            if (!item.TryGetProperty(
+                    property,
+                    out JsonElement value))
             {
-                if (portName.Contains("WSD", StringComparison.OrdinalIgnoreCase))
-                    return "WSD";
-
-                if (portName.Contains("IPP", StringComparison.OrdinalIgnoreCase))
-                    return "IPP";
-
-                return "Network";
+                return false;
             }
 
-            if (portName.StartsWith("USB", StringComparison.OrdinalIgnoreCase))
-                return "USB";
+            if (value.ValueKind == JsonValueKind.True)
+                return true;
 
-            if (portName.StartsWith("DOT4", StringComparison.OrdinalIgnoreCase))
-                return "DOT4";
-
-            if (portName.StartsWith("LPT", StringComparison.OrdinalIgnoreCase))
-                return "LPT";
-
-            if (portName.StartsWith("COM", StringComparison.OrdinalIgnoreCase))
-                return "COM";
-
-            return "Local";
-        }
-
-        private static bool IsPhysicalPrinterPort(string portName)
-        {
-            if (string.IsNullOrWhiteSpace(portName))
+            if (value.ValueKind == JsonValueKind.False)
                 return false;
 
-            string value = portName.Trim();
-
-            return value.StartsWith("USB", StringComparison.OrdinalIgnoreCase)
-                   || value.StartsWith("DOT4", StringComparison.OrdinalIgnoreCase)
-                   || value.StartsWith("WSD", StringComparison.OrdinalIgnoreCase)
-                   || value.StartsWith("LPT", StringComparison.OrdinalIgnoreCase)
-                   || value.StartsWith("COM", StringComparison.OrdinalIgnoreCase);
+            return bool.TryParse(
+                value.ToString(),
+                out bool result) && result;
         }
 
-        private static bool IsLikelyNetworkPort(string portName)
+        private static uint JsonUInt32(
+            JsonElement item,
+            string property)
         {
-            if (string.IsNullOrWhiteSpace(portName))
-                return false;
-
-            string value = portName.Trim();
-
-            if (value.StartsWith("\\\\", StringComparison.OrdinalIgnoreCase))
-                return true;
-
-            if (value.StartsWith("IP_", StringComparison.OrdinalIgnoreCase) ||
-                value.StartsWith("TCPIP_", StringComparison.OrdinalIgnoreCase) ||
-                value.StartsWith("WSD", StringComparison.OrdinalIgnoreCase))
+            if (!item.TryGetProperty(
+                    property,
+                    out JsonElement value))
             {
-                return true;
+                return 0;
             }
 
-            return Regex.IsMatch(
-                value,
-                @"^\d{1,3}(\.\d{1,3}){3}(:\d+)?$",
-                RegexOptions.CultureInvariant);
-        }
-
-        private static bool IsVirtualPrinter(
-            string printerName,
-            string driverName,
-            string portName)
-        {
-            string combined =
-                $"{printerName} {driverName} {portName}";
-
-            string[] virtualNames =
+            if (value.ValueKind == JsonValueKind.Number &&
+                value.TryGetUInt32(out uint number))
             {
-                "Microsoft Print to PDF",
-                "Microsoft XPS Document Writer",
-                "Fax",
-                "OneNote",
-                "Send To OneNote",
-                "Microsoft Shared Fax Driver",
-                "PORTPROMPT:",
-                "FILE:",
-                "NUL:",
-                "XPSPort:"
-            };
-
-            foreach (string value in virtualNames)
-            {
-                if (combined.Contains(value, StringComparison.OrdinalIgnoreCase))
-                    return true;
+                return number;
             }
 
-            return false;
-        }
-
-        // =============================================================
-        // Generic helpers
-        // =============================================================
-        private static bool IsNoiseLine(string value)
-        {
-            if (string.IsNullOrWhiteSpace(value))
-                return true;
-
-            string text = value.Trim();
-
-            return text.Equals(
-                       "Microsoft PnP Utility",
-                       StringComparison.OrdinalIgnoreCase)
-                   ||
-                   ContainsNoMatchingDevices(text);
-        }
-
-        private static bool ContainsNoMatchingDevices(string text)
-        {
-            if (string.IsNullOrWhiteSpace(text))
-                return true;
-
-            return text.Contains("No matching devices found", StringComparison.OrdinalIgnoreCase)
-                   || text.Contains("No devices found", StringComparison.OrdinalIgnoreCase)
-                   || text.Contains("No devices were found", StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static bool LooksLikeInstanceId(string value)
-        {
-            return !string.IsNullOrWhiteSpace(value)
-                   && value.Contains('\\')
-                   && value.Length >= 5
-                   && !LooksLikeGuid(value);
-        }
-
-        private static bool LooksLikeGuid(string value)
-        {
-            return Regex.IsMatch(
-                value ?? "",
-                @"^\{[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}$",
-                RegexOptions.CultureInvariant);
-        }
-
-        private static bool LooksLikeProblemCode(string value)
-        {
-            return Regex.IsMatch(
-                value ?? "",
-                @"^\d+\s*\(0x[0-9A-Fa-f]+\)",
-                RegexOptions.CultureInvariant);
-        }
-
-        private static uint ParseProblemCode(string value)
-        {
-            Match match = Regex.Match(value ?? "", @"^\s*(\d+)");
-
-            return match.Success &&
-                   uint.TryParse(match.Groups[1].Value, out uint result)
+            return uint.TryParse(
+                value.ToString(),
+                out uint result)
                 ? result
                 : 0;
         }
 
-        private static string GetString(ManagementObject obj, string property)
+        // =============================================================
+        // WMI helpers
+        // =============================================================
+        private static string GetString(
+            ManagementObject obj,
+            string property)
         {
             try
             {
@@ -1029,7 +1290,9 @@ namespace Driver_Manager_Windows_10_11.Services
             }
         }
 
-        private static bool GetBool(ManagementObject obj, string property)
+        private static bool GetBool(
+            ManagementObject obj,
+            string property)
         {
             try
             {
@@ -1042,49 +1305,21 @@ namespace Driver_Manager_Windows_10_11.Services
             }
         }
 
-        private static uint GetUInt32(ManagementObject obj, string property)
+        private static uint GetUInt32(
+            ManagementObject obj,
+            string property)
         {
             try
             {
                 object? value = obj[property];
-                return value == null ? 0 : Convert.ToUInt32(value);
+                return value == null
+                    ? 0
+                    : Convert.ToUInt32(value);
             }
             catch
             {
                 return 0;
             }
-        }
-
-        private static void SortResult(List<GhostPrinterModel> result)
-        {
-            result.Sort((a, b) =>
-            {
-                int state = GetStateOrder(a.State).CompareTo(GetStateOrder(b.State));
-                if (state != 0)
-                    return state;
-
-                return string.Compare(
-                    a.Name,
-                    b.Name,
-                    StringComparison.OrdinalIgnoreCase);
-            });
-        }
-
-        private static int GetStateOrder(string state)
-        {
-            if (state.Equals("Duplicate / Copy", StringComparison.OrdinalIgnoreCase))
-                return 0;
-
-            if (state.Equals("Stale Queue", StringComparison.OrdinalIgnoreCase))
-                return 1;
-
-            if (state.Equals("Disconnected", StringComparison.OrdinalIgnoreCase))
-                return 2;
-
-            if (state.Equals("Disconnected Device", StringComparison.OrdinalIgnoreCase))
-                return 3;
-
-            return 4;
         }
     }
 }
