@@ -284,7 +284,7 @@ namespace Driver_Manager_Windows_10_11
             btnGhostPrinter.Padding = new Padding(12, 0, 0, 0);
             btnGhostPrinter.Size = new Size(221, 44);
             btnGhostPrinter.TabIndex = 8;
-            btnGhostPrinter.Text = "▧   Ghost Printer";
+            btnGhostPrinter.Text = "▧   Print Server";
             btnGhostPrinter.TextAlign = ContentAlignment.MiddleLeft;
             btnGhostPrinter.UseVisualStyleBackColor = false;
             btnGhostPrinter.Click += btnGhostPrinter_Click;
@@ -443,7 +443,7 @@ namespace Driver_Manager_Windows_10_11
                 new Size(1049, 30);
             lblGhostStatusTitle.TabIndex = 1;
             lblGhostStatusTitle.Text =
-                "No Ghost Printer Found";
+                "No Printers Found";
             lblGhostStatusTitle.TextAlign =
                 ContentAlignment.MiddleCenter;
 
@@ -464,7 +464,7 @@ namespace Driver_Manager_Windows_10_11
                 new Size(1049, 24);
             lblGhostStatusDescription.TabIndex = 2;
             lblGhostStatusDescription.Text =
-                "No disconnected printer devices detected.";
+                "Enter a Print Server name and scan its printer queues.";
             lblGhostStatusDescription.TextAlign =
                 ContentAlignment.MiddleCenter;
 

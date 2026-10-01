@@ -73,7 +73,7 @@ namespace Driver_Manager_Windows_10_11
 
             StyleSidebar(
                 form.GetGhostPrinterButtonForStyle(),
-                "\uEA14"); // DisconnectDisplay
+                "\uE968"); // Network / server style
         }
 
         private static void StyleSidebar(
@@ -145,7 +145,7 @@ namespace Driver_Manager_Windows_10_11
                     "Printers (IPP / Vendor)",
 
                 "btnGhostPrinter" =>
-                    "Ghost Printer",
+                    "Print Server",
 
                 _ => ""
             };

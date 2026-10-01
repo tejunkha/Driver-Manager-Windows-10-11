@@ -30,10 +30,10 @@ namespace Driver_Manager_Windows_10_11
             new List<PrinterDriverModel>();
 
         // =========================================================
-        // Ghost Printers
+        // Print Server
         // =========================================================
-        private List<GhostPrinterModel> allGhostPrinters =
-            new List<GhostPrinterModel>();
+        private List<PrintServerPrinterModel> allPrintServerPrinters =
+            new List<PrintServerPrinterModel>();
 
         // =========================================================
         // Printer Ports
@@ -78,7 +78,7 @@ namespace Driver_Manager_Windows_10_11
             InitializeUtilityUi();
             ActivityLogService.Log("APP START", "Application", "Driver Manager", "Success", $"Version {AppInfo.Version}");
 
-            HideGhostPrinterStatus();
+            HidePrintServerStatus();
 
             // เปิดรายละเอียดเมื่อดับเบิลคลิกแถว
             dgvDrivers.CellDoubleClick += dgvDrivers_CellDoubleClick;
@@ -132,7 +132,7 @@ namespace Driver_Manager_Windows_10_11
             txtSearch.Enabled = true;
             btnRefresh.Enabled = true;
 
-            HideGhostPrinterStatus();
+            HidePrintServerStatus();
 
             SetActiveButton(btnSystemDrivers);
 
@@ -168,7 +168,7 @@ namespace Driver_Manager_Windows_10_11
             txtSearch.Enabled = true;
             btnRefresh.Enabled = true;
 
-            HideGhostPrinterStatus();
+            HidePrintServerStatus();
 
             SetActiveButton(btnDriverStore);
 
@@ -204,7 +204,7 @@ namespace Driver_Manager_Windows_10_11
             txtSearch.Enabled = true;
             btnRefresh.Enabled = true;
 
-            HideGhostPrinterStatus();
+            HidePrintServerStatus();
 
             SetActiveButton(btnPrinterDrivers);
 
@@ -239,7 +239,7 @@ namespace Driver_Manager_Windows_10_11
             txtSearch.Enabled = true;
             btnRefresh.Enabled = true;
 
-            HideGhostPrinterStatus();
+            HidePrintServerStatus();
 
             SetActiveButton(btnPrinterPorts);
 
@@ -276,7 +276,7 @@ namespace Driver_Manager_Windows_10_11
             txtSearch.Enabled = true;
             btnRefresh.Enabled = true;
 
-            HideGhostPrinterStatus();
+            HidePrintServerStatus();
 
             SetActiveButton(btnPrinters);
 
@@ -298,7 +298,7 @@ namespace Driver_Manager_Windows_10_11
         }
 
         // =========================================================
-        // GHOST PRINTERS
+        // PRINT SERVERS
         // =========================================================
         private async void btnGhostPrinter_Click(
             object sender,
@@ -307,31 +307,39 @@ namespace Driver_Manager_Windows_10_11
             if (isLoading)
                 return;
 
-            currentPage = "Ghost Printer";
-            ActivityLogService.Log("VIEW", "Ghost Printer", "Ghost Printer", "Success", "Opened page");
+            currentPage = "Print Server";
+
+            ActivityLogService.Log(
+                "VIEW",
+                "Print Server",
+                "Print Server",
+                "Success",
+                "Opened Print Server page");
 
             txtSearch.Enabled = true;
             btnRefresh.Enabled = true;
 
-            HideGhostPrinterStatus();
+            HidePrintServerStatus();
 
             SetActiveButton(btnGhostPrinter);
 
             lblPageTitle.Text =
-                "Ghost Printer";
+                "Print Server";
 
             lblPageDescription.Text =
-                "Find and manage stale, duplicate, and disconnected printer queues";
+                "View printer queues and print jobs hosted by a Windows Print Server";
 
-            txtSearch.Clear();
+            txtSearch.Text =
+                Environment.MachineName;
+
             txtSearch.PlaceholderText =
-                "Search ghost printer...";
+                "Enter Print Server name...";
 
-            ConfigureGhostPrinterGrid();
+            ConfigurePrintServerGrid();
 
             UpdateDeleteButtonState();
 
-            await LoadGhostPrintersAsync();
+            await LoadPrintServerAsync();
         }
 
         // =========================================================
@@ -603,53 +611,59 @@ namespace Driver_Manager_Windows_10_11
         }
 
         // =========================================================
-        // GHOST PRINTER GRID
+        // PRINT SERVER GRID
         // =========================================================
-        private void ConfigureGhostPrinterGrid()
+        private void ConfigurePrintServerGrid()
         {
             dgvDrivers.Columns.Clear();
 
             dgvDrivers.Columns.Add(
                 CreateColumn(
                     "colName",
-                    "Printer Name",
-                    160));
+                    "Printer Queue",
+                    180));
+
+            dgvDrivers.Columns.Add(
+                CreateColumn(
+                    "colShare",
+                    "Share Name",
+                    130));
 
             dgvDrivers.Columns.Add(
                 CreateColumn(
                     "colDriver",
                     "Driver",
-                    130));
+                    170));
 
             dgvDrivers.Columns.Add(
                 CreateColumn(
                     "colPort",
                     "Port",
-                    110));
+                    130));
 
             dgvDrivers.Columns.Add(
                 CreateColumn(
-                    "colType",
-                    "Type",
-                    90));
+                    "colMonitor",
+                    "Port Monitor",
+                    120));
 
             dgvDrivers.Columns.Add(
                 CreateColumn(
-                    "colDevice",
-                    "Device",
-                    145));
+                    "colJobs",
+                    "Jobs",
+                    70));
 
             dgvDrivers.Columns.Add(
                 CreateColumn(
                     "colState",
                     "State",
-                    105));
+                    125));
 
             dgvDrivers.Columns.Add(
                 CreateColumn(
                     "colReason",
                     "Reason",
-                    230));
+                    240));
         }
 
         // =========================================================
@@ -1040,9 +1054,9 @@ namespace Driver_Manager_Windows_10_11
         }
 
         // =========================================================
-        // LOAD GHOST PRINTERS
+        // LOAD PRINT SERVERS
         // =========================================================
-        private async Task LoadGhostPrintersAsync()
+        private async Task LoadPrintServerAsync()
         {
             if (isLoading)
                 return;
@@ -1056,73 +1070,113 @@ namespace Driver_Manager_Windows_10_11
                 btnRefresh.Enabled = false;
                 txtSearch.Enabled = false;
 
-                lblStatus.Text =
-                    "Scanning printer queues and devices...";
+                string serverName =
+                    txtSearch.Text.Trim();
 
-                allGhostPrinters =
+                if (string.IsNullOrWhiteSpace(serverName))
+                {
+                    serverName =
+                        Environment.MachineName;
+
+                    txtSearch.Text =
+                        serverName;
+                }
+
+                lblStatus.Text =
+                    $"Scanning Print Server: {serverName}...";
+
+                allPrintServerPrinters =
                     await Task.Run(() =>
-                        GhostPrinterService.GetGhostPrinters());
+                        PrintServerService.GetServerPrinters(
+                            serverName,
+                            true));
 
                 dgvDrivers.Rows.Clear();
 
-                foreach (GhostPrinterModel printer in allGhostPrinters)
+                foreach (PrintServerPrinterModel printer
+                    in allPrintServerPrinters)
                 {
-                    int row = dgvDrivers.Rows.Add(
-                        printer.Name,
-                        printer.DriverName,
-                        printer.PortName,
-                        printer.PrinterType,
-                        printer.DeviceName,
-                        printer.State,
-                        printer.Reason);
+                    int row =
+                        dgvDrivers.Rows.Add(
+                            printer.PrinterName,
+                            printer.ShareName,
+                            printer.DriverName,
+                            printer.PortName,
+                            printer.PortMonitor,
+                            printer.JobCount,
+                            printer.State,
+                            printer.Reason);
 
-                    dgvDrivers.Rows[row].Tag = printer;
+                    dgvDrivers.Rows[row].Tag =
+                        printer;
 
                     Color stateColor =
-                        printer.State.Equals("Duplicate / Copy", StringComparison.OrdinalIgnoreCase)
-                            ? Color.FromArgb(217, 119, 6)
-                            : printer.State.Equals("Stale Queue", StringComparison.OrdinalIgnoreCase)
-                                ? Color.FromArgb(180, 83, 9)
-                                : Color.FromArgb(220, 38, 38);
+                        printer.State.Equals(
+                            "Print Job Problem",
+                            StringComparison.OrdinalIgnoreCase)
+                            ? Color.FromArgb(220, 38, 38)
+                            : printer.State.Equals(
+                                "Work Offline",
+                                StringComparison.OrdinalIgnoreCase)
+                                ? Color.FromArgb(217, 119, 6)
+                                : printer.State.Equals(
+                                    "Has Jobs",
+                                    StringComparison.OrdinalIgnoreCase)
+                                    ? Color.FromArgb(37, 99, 235)
+                                    : Color.FromArgb(71, 85, 105);
 
                     dgvDrivers.Rows[row]
                         .Cells["colState"]
-                        .Style.ForeColor = stateColor;
+                        .Style.ForeColor =
+                        stateColor;
 
                     dgvDrivers.Rows[row]
                         .Cells["colReason"]
-                        .ToolTipText = printer.Reason;
+                        .ToolTipText =
+                        printer.Reason;
+
+                    dgvDrivers.Rows[row]
+                        .Cells["colJobs"]
+                        .Style.Alignment =
+                        DataGridViewContentAlignment.MiddleCenter;
                 }
 
-                if (allGhostPrinters.Count == 0)
+                if (allPrintServerPrinters.Count == 0)
                 {
-                    ShowGhostPrinterStatus(
-                        "No Ghost Printer Found",
-                        "No stale, duplicate, or disconnected printer queues were detected.");
+                    ShowPrintServerStatus(
+                        "No Printers Found",
+                        $"No printer queues were returned by Print Server '{serverName}'.");
                 }
                 else
                 {
-                    HideGhostPrinterStatus();
+                    HidePrintServerStatus();
                 }
 
                 lblStatus.Text =
-                    allGhostPrinters.Count == 0
-                        ? "Ghost Printer    No items requiring cleanup"
-                        : $"Ghost Printer    {allGhostPrinters.Count} items";
+                    $"Print Server    {serverName}    {allPrintServerPrinters.Count} printers";
             }
             catch (Exception ex)
             {
-                ErrorHandler.ShowError(ex, "Load Ghost Printer");
+                ErrorHandler.ShowError(
+                    ex,
+                    "Load Print Server");
+
+                ShowPrintServerStatus(
+                    "Print Server Scan Failed",
+                    ex.Message);
 
                 lblStatus.Text =
-                    "Failed to load ghost printers";
+                    "Failed to scan Print Server";
             }
             finally
             {
                 btnRefresh.Enabled = true;
                 txtSearch.Enabled = true;
+
                 Cursor = Cursors.Default;
+
                 isLoading = false;
+
                 UpdateDeleteButtonState();
             }
         }
@@ -1173,9 +1227,9 @@ namespace Driver_Manager_Windows_10_11
                 await LoadInstalledPrintersAsync();
             }
             else if (currentPage ==
-                     "Ghost Printer")
+                     "Print Server")
             {
-                await LoadGhostPrintersAsync();
+                await LoadPrintServerAsync();
             }
         }
 
@@ -1358,38 +1412,14 @@ namespace Driver_Manager_Windows_10_11
                 }
 
                 // =====================================================
-                // GHOST PRINTER
+                // PRINT SERVER
                 // =====================================================
                 else if (currentPage ==
-                         "Ghost Printer")
+                         "Print Server")
                 {
-                    GhostPrinterModel? printer =
-                        row.Tag as GhostPrinterModel;
-
-                    if (printer != null)
-                    {
-                        string searchText =
-                            $"{printer.Name} " +
-                            $"{printer.DriverName} " +
-                            $"{printer.PortName} " +
-                            $"{printer.PrinterType} " +
-                            $"{printer.DeviceName} " +
-                            $"{printer.DeviceId} " +
-                            $"{printer.Manufacturer} " +
-                            $"{printer.State} " +
-                            $"{printer.Reason} " +
-                            $"{printer.ActionType} " +
-                            $"{printer.ClassGuid} " +
-                            $"{printer.Status} " +
-                            $"{printer.ProblemCode} " +
-                            $"{printer.Description}";
-
-                        found =
-                            string.IsNullOrWhiteSpace(keyword) ||
-                            searchText.Contains(
-                                keyword,
-                                StringComparison.OrdinalIgnoreCase);
-                    }
+                    // txtSearch is the Print Server name on this page.
+                    // It is intentionally not used as a row filter.
+                    found = true;
                 }
 
                 row.Visible = found;
@@ -1548,8 +1578,7 @@ namespace Driver_Manager_Windows_10_11
                 currentPage == "Driver Store" ||
                 currentPage == "Printer Drivers" ||
                 currentPage == "Printer Ports" ||
-                currentPage == "Printers" ||
-                currentPage == "Ghost Printer";
+                currentPage == "Printers";
 
             bool hasSelection =
                 dgvDrivers.SelectedRows.Count > 0 &&
@@ -1666,13 +1695,6 @@ namespace Driver_Manager_Windows_10_11
                             installedPrinter,
                             out message));
                 }
-                else if (tag is GhostPrinterModel ghostPrinter)
-                {
-                    success = await Task.Run(() =>
-                        DriverActionService.DeleteGhostPrinter(
-                            ghostPrinter,
-                            out message));
-                }
                 else
                 {
                     success = false;
@@ -1735,10 +1757,6 @@ namespace Driver_Manager_Windows_10_11
             if (tag is InstalledPrinterModel installedPrinter)
                 return installedPrinter.Name;
 
-            if (tag is GhostPrinterModel ghostPrinter)
-                return string.IsNullOrWhiteSpace(ghostPrinter.Name)
-                    ? ghostPrinter.DeviceId
-                    : ghostPrinter.Name;
 
             return "รายการที่เลือก";
         }
@@ -1769,9 +1787,9 @@ namespace Driver_Manager_Windows_10_11
                        "จะไม่ลบ Printer Driver";
             }
 
-            if (tag is GhostPrinterModel)
+            if (tag is PrintServerPrinterModel)
             {
-                return "การดำเนินการนี้จะลบ Ghost Printer Device หรือ Printer Queue ที่ค้างอยู่\n" +
+                return "การดำเนินการนี้จะลบ Print Server Device หรือ Printer Queue ที่ค้างอยู่\n" +
                        "จะไม่ลบ Driver Package ออกจาก Driver Store";
             }
 
@@ -1788,20 +1806,20 @@ namespace Driver_Manager_Windows_10_11
                 await LoadPrinterPortsAsync();
             else if (currentPage == "Printers")
                 await LoadInstalledPrintersAsync();
-            else if (currentPage == "Ghost Printer")
-                await LoadGhostPrintersAsync();
+            else if (currentPage == "Print Server")
+                await LoadPrintServerAsync();
             else
                 UpdateDeleteButtonState();
         }
 
         // =========================================================
-        // GHOST PRINTER STATUS
+        // PRINT SERVER STATUS
         // =========================================================
-        private void ShowGhostPrinterStatus(
+        private void ShowPrintServerStatus(
             string title,
             string description)
         {
-            if (currentPage != "Ghost Printer")
+            if (currentPage != "Print Server")
                 return;
 
             lblGhostStatusTitle.Text = title;
@@ -1811,7 +1829,7 @@ namespace Driver_Manager_Windows_10_11
             pnlGhostStatus.BringToFront();
         }
 
-        private void HideGhostPrinterStatus()
+        private void HidePrintServerStatus()
         {
             if (pnlGhostStatus == null)
                 return;
@@ -1895,18 +1913,6 @@ namespace Driver_Manager_Windows_10_11
                 return;
             }
 
-            // =====================================================
-            // GHOST PRINTER
-            // =====================================================
-            if (currentPage == "Ghost Printer" &&
-                tag is GhostPrinterModel ghostPrinter)
-            {
-                using (var detailsForm =
-                    new GhostPrinterDetailsForm(ghostPrinter))
-                {
-                    detailsForm.ShowDialog(this);
-                }
-            }
 
             // =====================================================
             // PRINTER PORTS
