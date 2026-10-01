@@ -8,6 +8,7 @@ namespace Driver_Manager_Windows_10_11
     internal static class UiStyle
     {
         private const int SidebarIconSize = 24;
+        private const int SidebarIconSlotWidth = 30;
         private const int ActionIconSize = 20;
 
         private static readonly Color SidebarBack =
@@ -90,10 +91,9 @@ namespace Driver_Manager_Windows_10_11
                 10F,
                 FontStyle.Regular);
 
-            button.Image = CreateWindowsGlyph(
+            button.Image = CreateSidebarGlyph(
                 glyph,
-                SidebarText,
-                SidebarIconSize);
+                SidebarText);
 
             button.ImageAlign =
                 ContentAlignment.MiddleLeft;
@@ -105,7 +105,7 @@ namespace Driver_Manager_Windows_10_11
                 TextImageRelation.ImageBeforeText;
 
             button.Padding =
-                new Padding(14, 0, 8, 0);
+                new Padding(12, 0, 8, 0);
 
             button.FlatStyle =
                 FlatStyle.Flat;
@@ -397,6 +397,58 @@ namespace Driver_Manager_Windows_10_11
             }
         }
 
+        private static Bitmap CreateSidebarGlyph(
+            string glyph,
+            Color color)
+        {
+            string fontName =
+                HasFont("Segoe Fluent Icons")
+                    ? "Segoe Fluent Icons"
+                    : "Segoe MDL2 Assets";
+
+            Bitmap bitmap =
+                new Bitmap(
+                    SidebarIconSlotWidth,
+                    SidebarIconSize);
+
+            using Graphics graphics =
+                Graphics.FromImage(bitmap);
+
+            graphics.Clear(Color.Transparent);
+            graphics.TextRenderingHint =
+                TextRenderingHint.AntiAliasGridFit;
+
+            using Font font =
+                new Font(
+                    fontName,
+                    18F,
+                    FontStyle.Regular,
+                    GraphicsUnit.Pixel);
+
+            using Brush brush =
+                new SolidBrush(color);
+
+            SizeF measured =
+                graphics.MeasureString(glyph, font);
+
+            // Reserve a fixed-width icon slot. This keeps every label
+            // starting at exactly the same horizontal position.
+            float x =
+                (SidebarIconSlotWidth - measured.Width) / 2F;
+
+            float y =
+                (SidebarIconSize - measured.Height) / 2F - 1F;
+
+            graphics.DrawString(
+                glyph,
+                font,
+                brush,
+                x,
+                y);
+
+            return bitmap;
+        }
+
         private static Bitmap CreateWindowsGlyph(
             string glyph,
             Color color,
@@ -437,7 +489,7 @@ namespace Driver_Manager_Windows_10_11
                 (size - measured.Width) / 2F;
 
             float y =
-                (size - measured.Height) / 2F - 1F;
+                (size - measured.Height) / 2F - 0.5F;
 
             graphics.DrawString(
                 glyph,
