@@ -4,6 +4,7 @@ namespace Driver_Manager_Windows_10_11.Models
     {
         public string ServerName { get; set; } = "";
         public string PrinterName { get; set; } = "";
+        public string Category { get; set; } = "";
         public string ShareName { get; set; } = "";
         public string DriverName { get; set; } = "";
         public string PortName { get; set; } = "";

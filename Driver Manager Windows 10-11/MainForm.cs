@@ -311,10 +311,10 @@ namespace Driver_Manager_Windows_10_11
 
             ActivityLogService.Log(
                 "VIEW",
-                "Print Server",
-                "Print Server",
+                "Devices & Printers",
+                "Devices & Printers",
                 "Success",
-                "Opened Print Server page");
+                "Opened Devices & Printers page");
 
             txtSearch.Enabled = true;
             btnRefresh.Enabled = true;
@@ -324,22 +324,21 @@ namespace Driver_Manager_Windows_10_11
             SetActiveButton(btnGhostPrinter);
 
             lblPageTitle.Text =
-                "Print Server";
+                "Devices & Printers";
 
             lblPageDescription.Text =
-                "View printer queues and print jobs hosted by a Windows Print Server";
+                "View all items shown by Windows Devices and Printers";
 
-            txtSearch.Text =
-                Environment.MachineName;
+            txtSearch.Clear();
 
             txtSearch.PlaceholderText =
-                "Enter Print Server name...";
+                "Search device or printer...";
 
-            ConfigurePrintServerGrid();
+            ConfigureDevicesAndPrintersGrid();
 
             UpdateDeleteButtonState();
 
-            await LoadPrintServerAsync();
+            await LoadDevicesAndPrintersAsync();
         }
 
         // =========================================================
@@ -613,57 +612,47 @@ namespace Driver_Manager_Windows_10_11
         // =========================================================
         // PRINT SERVER GRID
         // =========================================================
-        private void ConfigurePrintServerGrid()
+        private void ConfigureDevicesAndPrintersGrid()
         {
             dgvDrivers.Columns.Clear();
 
-            dgvDrivers.Columns.Add(
-                CreateColumn(
-                    "colName",
-                    "Printer Queue",
-                    180));
+            dgvDrivers.Columns.Add(CreateColumn(
+                "colName", "Device / Printer", 190));
 
-            dgvDrivers.Columns.Add(
-                CreateColumn(
-                    "colShare",
-                    "Share Name",
-                    130));
+            dgvDrivers.Columns.Add(CreateColumn(
+                "colCategory", "Category", 110));
 
-            dgvDrivers.Columns.Add(
-                CreateColumn(
-                    "colDriver",
-                    "Driver",
-                    170));
+            dgvDrivers.Columns.Add(CreateColumn(
+                "colManufacturer", "Manufacturer", 110));
 
-            dgvDrivers.Columns.Add(
-                CreateColumn(
-                    "colPort",
-                    "Port",
-                    130));
+            dgvDrivers.Columns.Add(CreateColumn(
+                "colDriver", "Driver", 150));
 
-            dgvDrivers.Columns.Add(
-                CreateColumn(
-                    "colMonitor",
-                    "Port Monitor",
-                    120));
+            dgvDrivers.Columns.Add(CreateColumn(
+                "colPort", "Port", 105));
 
-            dgvDrivers.Columns.Add(
-                CreateColumn(
-                    "colJobs",
-                    "Jobs",
-                    70));
+            dgvDrivers.Columns.Add(CreateColumn(
+                "colStatus", "Status", 100));
 
-            dgvDrivers.Columns.Add(
-                CreateColumn(
-                    "colState",
-                    "State",
-                    125));
+            dgvDrivers.Columns.Add(CreateColumn(
+                "colState", "State", 110));
 
-            dgvDrivers.Columns.Add(
-                CreateColumn(
-                    "colReason",
-                    "Reason",
-                    240));
+            dgvDrivers.Columns.Add(CreateColumn(
+                "colSource", "Source", 125));
+
+            dgvDrivers.Columns.Add(CreateColumn(
+                "colPresent", "Present", 75));
+
+            dgvDrivers.Columns.Add(CreateColumn(
+                "colReason", "Reason", 220));
+
+            dgvDrivers.Columns["colPresent"]!
+                .DefaultCellStyle.Alignment =
+                DataGridViewContentAlignment.MiddleCenter;
+
+            dgvDrivers.Columns["colState"]!
+                .DefaultCellStyle.Alignment =
+                DataGridViewContentAlignment.MiddleCenter;
         }
 
         // =========================================================
@@ -1056,7 +1045,7 @@ namespace Driver_Manager_Windows_10_11
         // =========================================================
         // LOAD PRINT SERVERS
         // =========================================================
-        private async Task LoadPrintServerAsync()
+        private async Task LoadDevicesAndPrintersAsync()
         {
             if (isLoading)
                 return;
@@ -1070,57 +1059,46 @@ namespace Driver_Manager_Windows_10_11
                 btnRefresh.Enabled = false;
                 txtSearch.Enabled = false;
 
-                string serverName =
-                    txtSearch.Text.Trim();
-
-                if (string.IsNullOrWhiteSpace(serverName))
-                {
-                    serverName =
-                        Environment.MachineName;
-
-                    txtSearch.Text =
-                        serverName;
-                }
-
                 lblStatus.Text =
-                    $"Scanning Print Server: {serverName}...";
+                    "Loading Devices & Printers...";
 
                 allPrintServerPrinters =
                     await Task.Run(() =>
-                        PrintServerService.GetServerPrinters(
-                            serverName,
-                            true));
+                        DevicesAndPrintersService.GetAll(
+                            Environment.MachineName));
 
                 dgvDrivers.Rows.Clear();
 
-                foreach (PrintServerPrinterModel printer
+                foreach (PrintServerPrinterModel item
                     in allPrintServerPrinters)
                 {
                     int row =
                         dgvDrivers.Rows.Add(
-                            printer.PrinterName,
-                            printer.ShareName,
-                            printer.DriverName,
-                            printer.PortName,
-                            printer.PortMonitor,
-                            printer.JobCount,
-                            printer.State,
-                            printer.Reason);
+                            item.PrinterName,
+                            item.Category,
+                            item.Manufacturer,
+                            item.DriverName,
+                            item.PortName,
+                            item.Status,
+                            item.State,
+                            item.Source,
+                            item.Present ? "Yes" : "No",
+                            item.Reason);
 
                     dgvDrivers.Rows[row].Tag =
-                        printer;
+                        item;
 
-                    Color stateColor =
-                        printer.State.Equals(
-                            "Print Job Problem",
+                    Color statusColor =
+                        item.State.Equals(
+                            "Not Present",
                             StringComparison.OrdinalIgnoreCase)
                             ? Color.FromArgb(220, 38, 38)
-                            : printer.State.Equals(
-                                "Work Offline",
+                            : item.State.Equals(
+                                "Offline",
                                 StringComparison.OrdinalIgnoreCase)
                                 ? Color.FromArgb(217, 119, 6)
-                                : printer.State.Equals(
-                                    "Has Jobs",
+                                : item.Category.Equals(
+                                    "Printer",
                                     StringComparison.OrdinalIgnoreCase)
                                     ? Color.FromArgb(37, 99, 235)
                                     : Color.FromArgb(71, 85, 105);
@@ -1128,24 +1106,19 @@ namespace Driver_Manager_Windows_10_11
                     dgvDrivers.Rows[row]
                         .Cells["colState"]
                         .Style.ForeColor =
-                        stateColor;
+                        statusColor;
 
                     dgvDrivers.Rows[row]
                         .Cells["colReason"]
                         .ToolTipText =
-                        printer.Reason;
-
-                    dgvDrivers.Rows[row]
-                        .Cells["colJobs"]
-                        .Style.Alignment =
-                        DataGridViewContentAlignment.MiddleCenter;
+                        item.Reason;
                 }
 
                 if (allPrintServerPrinters.Count == 0)
                 {
                     ShowPrintServerStatus(
-                        "No Printers Found",
-                        $"No printer queues were returned by Print Server '{serverName}'.");
+                        "No Devices Found",
+                        "Windows Devices and Printers returned no items.");
                 }
                 else
                 {
@@ -1153,20 +1126,20 @@ namespace Driver_Manager_Windows_10_11
                 }
 
                 lblStatus.Text =
-                    $"Print Server    {serverName}    {allPrintServerPrinters.Count} printers";
+                    $"Devices & Printers    {allPrintServerPrinters.Count} items";
             }
             catch (Exception ex)
             {
                 ErrorHandler.ShowError(
                     ex,
-                    "Load Print Server");
+                    "Load Devices & Printers");
 
                 ShowPrintServerStatus(
-                    "Print Server Scan Failed",
+                    "Devices & Printers Scan Failed",
                     ex.Message);
 
                 lblStatus.Text =
-                    "Failed to scan Print Server";
+                    "Failed to load Devices & Printers";
             }
             finally
             {
@@ -1229,7 +1202,7 @@ namespace Driver_Manager_Windows_10_11
             else if (currentPage ==
                      "Print Server")
             {
-                await LoadPrintServerAsync();
+                await LoadDevicesAndPrintersAsync();
             }
         }
 
@@ -1417,9 +1390,29 @@ namespace Driver_Manager_Windows_10_11
                 else if (currentPage ==
                          "Print Server")
                 {
-                    // txtSearch is the Print Server name on this page.
-                    // It is intentionally not used as a row filter.
-                    found = true;
+                    PrintServerPrinterModel? item =
+                        row.Tag as PrintServerPrinterModel;
+
+                    if (item != null)
+                    {
+                        string searchText =
+                            $"{item.PrinterName} " +
+                            $"{item.Category} " +
+                            $"{item.Manufacturer} " +
+                            $"{item.DriverName} " +
+                            $"{item.PortName} " +
+                            $"{item.Status} " +
+                            $"{item.State} " +
+                            $"{item.Source} " +
+                            $"{item.DeviceId} " +
+                            $"{item.Reason}";
+
+                        found =
+                            string.IsNullOrWhiteSpace(keyword) ||
+                            searchText.Contains(
+                                keyword,
+                                StringComparison.OrdinalIgnoreCase);
+                    }
                 }
 
                 row.Visible = found;
@@ -1807,7 +1800,7 @@ namespace Driver_Manager_Windows_10_11
             else if (currentPage == "Printers")
                 await LoadInstalledPrintersAsync();
             else if (currentPage == "Print Server")
-                await LoadPrintServerAsync();
+                await LoadDevicesAndPrintersAsync();
             else
                 UpdateDeleteButtonState();
         }
@@ -1922,6 +1915,22 @@ namespace Driver_Manager_Windows_10_11
             {
                 using (var detailsForm =
                     new PrinterPortDetailsForm(printerPort))
+                {
+                    detailsForm.ShowDialog(this);
+                }
+
+                return;
+            }
+
+
+            // =====================================================
+            // DEVICES & PRINTERS
+            // =====================================================
+            if (currentPage == "Print Server" &&
+                tag is PrintServerPrinterModel devicePrinter)
+            {
+                using (var detailsForm =
+                    new DevicePrinterDetailsForm(devicePrinter))
                 {
                     detailsForm.ShowDialog(this);
                 }

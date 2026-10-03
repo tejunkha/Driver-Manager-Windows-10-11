@@ -22,7 +22,7 @@ namespace Driver_Manager_Windows_10_11
                 ControlStyles.ResizeRedraw,
                 true);
 
-            Font = new Font("Segoe UI", 9F);
+            Font = new Font("Segoe UI", 8.5F);
 
             // Control does not support Color.Transparent here.
             // Use the sidebar color because the badge paints its full area anyway.
@@ -55,150 +55,116 @@ namespace Driver_Manager_Windows_10_11
 
             Graphics g = e.Graphics;
 
-            g.SmoothingMode = SmoothingMode.AntiAlias;
-            g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+            g.SmoothingMode =
+                SmoothingMode.AntiAlias;
 
-            Rectangle rect = new Rectangle(
-                1,
-                1,
-                Math.Max(1, Width - 2),
-                Math.Max(1, Height - 2));
+            g.TextRenderingHint =
+                TextRenderingHint.ClearTypeGridFit;
 
-            const int radius = 12;
+            Rectangle rect =
+                new Rectangle(
+                    1,
+                    1,
+                    Math.Max(1, Width - 2),
+                    Math.Max(1, Height - 2));
 
-            Color background;
-            Color border;
-            Color subtitleColor;
+            const int radius = 10;
 
-            if (isAdministrator)
+            Color background =
+                isAdministrator
+                    ? Color.FromArgb(27, 92, 58)
+                    : Color.FromArgb(91, 72, 25);
+
+            Color border =
+                isAdministrator
+                    ? Color.FromArgb(66, 151, 101)
+                    : Color.FromArgb(166, 133, 53);
+
+            Color subtitleColor =
+                isAdministrator
+                    ? Color.FromArgb(198, 220, 205)
+                    : Color.FromArgb(232, 212, 164);
+
+            using (GraphicsPath path =
+                CreateRoundedRectangle(
+                    rect,
+                    radius))
+            using (SolidBrush brush =
+                new SolidBrush(background))
+            using (Pen pen =
+                new Pen(border, 1F))
             {
-                background = Color.FromArgb(18, 95, 52);
-                border = Color.FromArgb(45, 220, 120);
-                subtitleColor = Color.FromArgb(205, 235, 218);
+                g.FillPath(
+                    brush,
+                    path);
+
+                g.DrawPath(
+                    pen,
+                    path);
             }
-            else
+
+            // Medium-size status dot.
+            using (SolidBrush dot =
+                new SolidBrush(
+                    isAdministrator
+                        ? Color.FromArgb(82, 190, 123)
+                        : Color.FromArgb(215, 169, 64)))
             {
-                background = Color.FromArgb(105, 72, 8);
-                border = Color.FromArgb(245, 180, 35);
-                subtitleColor = Color.FromArgb(255, 230, 165);
+                g.FillEllipse(
+                    dot,
+                    13,
+                    13,
+                    9,
+                    9);
             }
 
-            using (GraphicsPath path = CreateRoundedRectangle(rect, radius))
-            using (SolidBrush brush = new SolidBrush(background))
-            using (Pen pen = new Pen(border, 1.5F))
-            {
-                g.FillPath(brush, path);
-                g.DrawPath(pen, path);
-            }
+            using Font titleFont =
+                new Font(
+                    "Segoe UI Semibold",
+                    10.5F,
+                    FontStyle.Bold);
 
-            DrawModeIcon(g);
+            using Font subtitleFont =
+                new Font(
+                    "Segoe UI",
+                    7.8F,
+                    FontStyle.Regular);
 
-            using Font titleFont = new Font(
-                "Segoe UI Semibold",
-                10.5F,
-                FontStyle.Bold);
+            string title =
+                isAdministrator
+                    ? "ADMINISTRATOR"
+                    : "STANDARD USER";
 
-            using Font subtitleFont = new Font(
-                "Segoe UI",
-                7.8F,
-                FontStyle.Regular);
-
-            string title = isAdministrator
-                ? "ADMINISTRATOR"
-                : "STANDARD USER";
-
-            string subtitle = isAdministrator
-                ? "Full privileges available"
-                : "Some actions require administrator privileges";
+            string subtitle =
+                isAdministrator
+                    ? "Administrator mode"
+                    : "Standard user mode";
 
             using Brush titleBrush =
-                new SolidBrush(Color.White);
+                new SolidBrush(
+                    Color.White);
 
             using Brush subtitleBrush =
-                new SolidBrush(subtitleColor);
+                new SolidBrush(
+                    subtitleColor);
 
             g.DrawString(
                 title,
                 titleFont,
                 titleBrush,
-                new PointF(62, 16));
+                new PointF(31, 9));
 
             g.DrawString(
                 subtitle,
                 subtitleFont,
                 subtitleBrush,
-                new PointF(62, 40));
+                new PointF(31, 30));
         }
 
         private void DrawModeIcon(Graphics g)
         {
-            if (isAdministrator)
-            {
-                DrawShield(
-                    g,
-                    14,
-                    14,
-                    38,
-                    Color.FromArgb(40, 210, 110));
-
-                using Pen checkPen =
-                    new Pen(Color.White, 3F);
-
-                checkPen.StartCap = LineCap.Round;
-                checkPen.EndCap = LineCap.Round;
-
-                PointF p1 = new PointF(24, 33);
-                PointF p2 = new PointF(31, 40);
-                PointF p3 = new PointF(43, 25);
-
-                g.DrawLines(
-                    checkPen,
-                    new[] { p1, p2, p3 });
-            }
-            else
-            {
-                PointF[] triangle =
-                {
-                    new PointF(33, 14),
-                    new PointF(51, 48),
-                    new PointF(15, 48)
-                };
-
-                using Brush warningBrush =
-                    new SolidBrush(Color.FromArgb(255, 193, 7));
-
-                using Pen warningPen =
-                    new Pen(
-                        Color.FromArgb(255, 220, 90),
-                        1.5F);
-
-                g.FillPolygon(warningBrush, triangle);
-                g.DrawPolygon(warningPen, triangle);
-
-                using Font warningFont =
-                    new Font(
-                        "Segoe UI Semibold",
-                        18F,
-                        FontStyle.Bold);
-
-                using Brush exclamationBrush =
-                    new SolidBrush(
-                        Color.FromArgb(80, 55, 0));
-
-                using StringFormat format =
-                    new StringFormat
-                    {
-                        Alignment = StringAlignment.Center,
-                        LineAlignment = StringAlignment.Center
-                    };
-
-                g.DrawString(
-                    "!",
-                    warningFont,
-                    exclamationBrush,
-                    new RectangleF(24, 20, 18, 25),
-                    format);
-            }
+            // Intentionally empty.
+            // The badge now uses a small status dot only.
         }
 
         private static void DrawShield(
