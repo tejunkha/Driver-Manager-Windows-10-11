@@ -4,7 +4,7 @@ using System.Drawing.Drawing2D;
 using System.Drawing.Text;
 using System.Windows.Forms;
 
-namespace Driver_Manager_Windows_10_11
+namespace Driver_Manager_Windows_10_11.UI
 {
     internal class ModeBadgeControl : Control
     {

@@ -1,7 +1,7 @@
 using System.Security.Principal;
 using System.Windows.Forms;
 
-namespace Driver_Manager_Windows_10_11
+namespace Driver_Manager_Windows_10_11.Helpers
 {
     internal static class AdminHelper
     {

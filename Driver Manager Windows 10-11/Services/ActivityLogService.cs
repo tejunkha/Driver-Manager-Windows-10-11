@@ -4,7 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 
-namespace Driver_Manager_Windows_10_11
+namespace Driver_Manager_Windows_10_11.Services
 {
     /// <summary>
     /// One activity log entry.

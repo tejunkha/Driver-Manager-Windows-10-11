@@ -1,7 +1,8 @@
+using Driver_Manager_Windows_10_11.Helpers;
 using System.Drawing;
 using System.Windows.Forms;
 
-namespace Driver_Manager_Windows_10_11
+namespace Driver_Manager_Windows_10_11.Forms
 {
     internal sealed class AboutForm : Form
     {
