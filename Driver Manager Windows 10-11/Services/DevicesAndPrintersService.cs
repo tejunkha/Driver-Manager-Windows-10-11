@@ -150,6 +150,29 @@ namespace Driver_Manager_Windows_10_11.Services
                         string path =
                             SafeString(item.Path);
 
+                        string deviceInstanceId =
+                            GetShellPropertyString(
+                                item,
+                                "System.Devices.DeviceInstanceId");
+
+                        string containerId =
+                            GetShellPropertyString(
+                                item,
+                                "System.Devices.ContainerId");
+
+                        if (string.IsNullOrWhiteSpace(containerId))
+                        {
+                            containerId =
+                                GetShellPropertyString(
+                                    item,
+                                    "System.Devices.Aep.ContainerId");
+                        }
+
+                        string hardwareIds =
+                            GetShellPropertyString(
+                                item,
+                                "System.Devices.HardwareIds");
+
                         // STANDARD FILTER:
                         // Windows DeviceContainer category IDs identify
                         // printer/fax devices using the PrintFax category.
@@ -200,7 +223,19 @@ namespace Driver_Manager_Windows_10_11.Services
                                     "Devices & Printers",
 
                                 DeviceId =
+                                    FirstNonEmpty(
+                                        deviceInstanceId,
+                                        hardwareIds,
+                                        Safe(queue?.PnpDeviceId)),
+
+                                ShellPath =
                                     path,
+
+                                DeviceInstanceId =
+                                    deviceInstanceId,
+
+                                ContainerId =
+                                    containerId,
 
                                 Manufacturer =
                                     Safe(queue?.Manufacturer),
@@ -355,6 +390,40 @@ namespace Driver_Manager_Windows_10_11.Services
                     StringSplitOptions.TrimEntries))
             {
                 yield return line;
+            }
+        }
+
+        private static string GetShellPropertyString(
+            dynamic item,
+            string propertyName)
+        {
+            try
+            {
+                object? value =
+                    item.ExtendedProperty(propertyName);
+
+                if (value == null)
+                    return "";
+
+                if (value is Array array)
+                {
+                    foreach (object? element in array)
+                    {
+                        string text =
+                            SafeString(element);
+
+                        if (!string.IsNullOrWhiteSpace(text))
+                            return text;
+                    }
+
+                    return "";
+                }
+
+                return SafeString(value);
+            }
+            catch
+            {
+                return "";
             }
         }
 
@@ -648,6 +717,18 @@ namespace Driver_Manager_Windows_10_11.Services
             catch
             {
             }
+        }
+
+        private static string FirstNonEmpty(
+            params string[] values)
+        {
+            foreach (string value in values)
+            {
+                if (!string.IsNullOrWhiteSpace(value))
+                    return value.Trim();
+            }
+
+            return "";
         }
     }
 }
