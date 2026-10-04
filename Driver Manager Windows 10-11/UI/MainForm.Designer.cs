@@ -194,7 +194,7 @@ namespace Driver_Manager_Windows_10_11
             btnSystemDrivers.Padding = new Padding(12, 0, 0, 0);
             btnSystemDrivers.Size = new Size(221, 44);
             btnSystemDrivers.TabIndex = 3;
-            btnSystemDrivers.Text = "▣   System Drivers";
+            btnSystemDrivers.Text = "System Drivers";
             btnSystemDrivers.TextAlign = ContentAlignment.MiddleLeft;
             btnSystemDrivers.UseVisualStyleBackColor = false;
             btnSystemDrivers.Click += btnSystemDrivers_Click;
@@ -212,7 +212,7 @@ namespace Driver_Manager_Windows_10_11
             btnDriverStore.Padding = new Padding(12, 0, 0, 0);
             btnDriverStore.Size = new Size(221, 44);
             btnDriverStore.TabIndex = 4;
-            btnDriverStore.Text = "▤   Driver Store";
+            btnDriverStore.Text = "Driver Store";
             btnDriverStore.TextAlign = ContentAlignment.MiddleLeft;
             btnDriverStore.UseVisualStyleBackColor = false;
             btnDriverStore.Click += btnDriverStore_Click;
@@ -230,7 +230,7 @@ namespace Driver_Manager_Windows_10_11
             btnPrinterDrivers.Padding = new Padding(12, 0, 0, 0);
             btnPrinterDrivers.Size = new Size(221, 44);
             btnPrinterDrivers.TabIndex = 5;
-            btnPrinterDrivers.Text = "▦   Printer Drivers";
+            btnPrinterDrivers.Text = "Printer Drivers";
             btnPrinterDrivers.TextAlign = ContentAlignment.MiddleLeft;
             btnPrinterDrivers.UseVisualStyleBackColor = false;
             btnPrinterDrivers.Click += btnPrinterDrivers_Click;
@@ -248,7 +248,7 @@ namespace Driver_Manager_Windows_10_11
             btnPrinterPorts.Padding = new Padding(12, 0, 0, 0);
             btnPrinterPorts.Size = new Size(221, 44);
             btnPrinterPorts.TabIndex = 6;
-            btnPrinterPorts.Text = "▤   Printer Ports";
+            btnPrinterPorts.Text = "Printer Ports";
             btnPrinterPorts.TextAlign = ContentAlignment.MiddleLeft;
             btnPrinterPorts.UseVisualStyleBackColor = false;
 
@@ -266,7 +266,7 @@ namespace Driver_Manager_Windows_10_11
             btnPrinters.Padding = new Padding(12, 0, 0, 0);
             btnPrinters.Size = new Size(221, 44);
             btnPrinters.TabIndex = 7;
-            btnPrinters.Text = "▣   Printers (IPP / Vendor)";
+            btnPrinters.Text = "Printers (IPP / Vendor)";
             btnPrinters.TextAlign = ContentAlignment.MiddleLeft;
             btnPrinters.UseVisualStyleBackColor = false;
 
@@ -284,7 +284,7 @@ namespace Driver_Manager_Windows_10_11
             btnGhostPrinter.Padding = new Padding(12, 0, 0, 0);
             btnGhostPrinter.Size = new Size(221, 44);
             btnGhostPrinter.TabIndex = 8;
-            btnGhostPrinter.Text = "▧   Print Server";
+            btnGhostPrinter.Text = "Print Server";
             btnGhostPrinter.TextAlign = ContentAlignment.MiddleLeft;
             btnGhostPrinter.UseVisualStyleBackColor = false;
             btnGhostPrinter.Click += btnGhostPrinter_Click;
@@ -504,7 +504,7 @@ namespace Driver_Manager_Windows_10_11
             btnRefresh.Name = "btnRefresh";
             btnRefresh.Size = new Size(105, 32);
             btnRefresh.TabIndex = 1;
-            btnRefresh.Text = "⟳  Refresh";
+            btnRefresh.Text = "Refresh";
             btnRefresh.UseVisualStyleBackColor = false;
             btnRefresh.Click += btnRefresh_Click;
             // 
@@ -520,7 +520,7 @@ namespace Driver_Manager_Windows_10_11
             btnDelete.Name = "btnDelete";
             btnDelete.Size = new Size(105, 32);
             btnDelete.TabIndex = 2;
-            btnDelete.Text = "✕  Delete";
+            btnDelete.Text = "Delete";
             btnDelete.UseVisualStyleBackColor = false;
             btnDelete.Enabled = false;
             // 

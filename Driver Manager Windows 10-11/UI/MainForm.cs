@@ -1579,9 +1579,10 @@ namespace Driver_Manager_Windows_10_11
                 // Delete button
                 btnDelete.Text = "Delete";
                 btnDelete.FlatStyle = FlatStyle.Flat;
-                btnDelete.FlatAppearance.BorderSize = 0;
-                btnDelete.BackColor = Color.FromArgb(226, 232, 240);
-                btnDelete.ForeColor = Color.FromArgb(148, 163, 184);
+                btnDelete.FlatAppearance.BorderSize = 1;
+                btnDelete.FlatAppearance.BorderColor = Color.FromArgb(252, 165, 165);
+                btnDelete.BackColor = Color.FromArgb(254, 226, 226);
+                btnDelete.ForeColor = Color.FromArgb(185, 28, 28);
                 btnDelete.Cursor = Cursors.Hand;
 
                 // Sidebar
@@ -1651,11 +1652,47 @@ namespace Driver_Manager_Windows_10_11
                 currentPage == "Printers" ||
                 currentPage == "Print Server";
 
-            bool hasSelection =
-                dgvDrivers.SelectedRows.Count > 0 &&
-                dgvDrivers.SelectedRows[0].Tag != null;
+            // Delete is always visually identifiable on supported pages.
+            // The click handler still validates the actual row selection.
+            bool enabled = supportedPage && !isLoading;
 
-            btnDelete.Enabled = supportedPage && hasSelection && !isLoading;
+            btnDelete.Enabled = enabled;
+
+            // Force Delete color here because ApplyLocalUiStyle()
+            // also runs in MainForm and can otherwise overwrite the color.
+            if (enabled)
+            {
+                btnDelete.BackColor =
+                    Color.FromArgb(220, 38, 38);       // Red
+
+                btnDelete.ForeColor =
+                    Color.White;
+
+                btnDelete.FlatAppearance.BorderColor =
+                    Color.FromArgb(185, 28, 28);
+            }
+            else if (supportedPage)
+            {
+                btnDelete.BackColor =
+                    Color.FromArgb(254, 226, 226);     // Light red
+
+                btnDelete.ForeColor =
+                    Color.FromArgb(185, 28, 28);
+
+                btnDelete.FlatAppearance.BorderColor =
+                    Color.FromArgb(252, 165, 165);
+            }
+            else
+            {
+                btnDelete.BackColor =
+                    Color.FromArgb(226, 232, 240);
+
+                btnDelete.ForeColor =
+                    Color.FromArgb(148, 163, 184);
+
+                btnDelete.FlatAppearance.BorderColor =
+                    Color.FromArgb(203, 213, 225);
+            }
         }
 
         private async void btnDelete_Click(
