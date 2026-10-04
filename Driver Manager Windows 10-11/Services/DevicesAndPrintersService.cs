@@ -8,16 +8,22 @@ using Driver_Manager_Windows_10_11.Models;
 namespace Driver_Manager_Windows_10_11.Services
 {
     /// <summary>
-    /// Printer-only inventory.
+    /// STANDARD Devices & Printers printer inventory.
     ///
-    /// Sources:
-    /// 1. Windows Devices and Printers Shell view.
-    /// 2. Windows Printers folder.
-    /// 3. Win32_Printer queue information.
-    /// 4. Win32_PnPEntity printer information.
+    /// The Windows Shell Devices & Printers namespace is the authoritative
+    /// source for the visible printer list.
     ///
-    /// Non-printer devices are never added to the result.
-    /// The service is read-only.
+    /// Printer detection does NOT use printer model names, manufacturers,
+    /// ports, or other machine-specific strings. It uses the standard
+    /// System.Devices.CategoryIds Shell property and the PrintFax category.
+    ///
+    /// Win32_Printer is used only to enrich the Shell rows with driver,
+    /// port, queue, and status information.
+    ///
+    /// IMPORTANT:
+    /// Win32_Printer / PnP never creates additional rows here.
+    /// Therefore the list stays aligned with the printers displayed by
+    /// Windows Devices and Printers.
     /// </summary>
     public static class DevicesAndPrintersService
     {
@@ -27,6 +33,9 @@ namespace Driver_Manager_Windows_10_11.Services
         private const string PrinterClassGuid =
             "{4D36E979-E325-11CE-BFC1-08002BE10318}";
 
+        private const string CategoryIdsProperty =
+            "System.Devices.CategoryIds";
+
         public static List<PrintServerPrinterModel> GetAll(
             string serverName = "")
         {
@@ -34,74 +43,62 @@ namespace Driver_Manager_Windows_10_11.Services
                 NormalizeServerName(serverName);
 
             if (string.IsNullOrWhiteSpace(server))
+            {
                 server = Environment.MachineName;
+            }
 
             if (!IsLocalServer(server))
             {
                 throw new NotSupportedException(
-                    "Printer Devices inventory is available for the local computer only.");
+                    "Devices & Printers inventory is supported for the local computer.");
             }
 
-            var rows =
+            Dictionary<string, QueueInfo> queues =
+                GetPrinterQueues(server);
+
+            var result =
                 new List<PrintServerPrinterModel>();
 
-            // 1) Devices and Printers Shell
-            TryAdd(
-                () => AddShellDeviceAndPrinterItems(server, rows));
+            EnumerateWindowsPrinterItems(
+                server,
+                queues,
+                result);
 
-            // 2) Printers folder
-            TryAdd(
-                () => AddShellPrinterFolder(server, rows));
-
-            // 3) Win32_Printer queues
-            TryAdd(
-                () => AddWin32Printers(server, rows));
-
-            // 4) PnP printer devices, including stored/non-present records
-            TryAdd(
-                () => AddPnpPrinters(server, rows));
-
-            // Merge by printer name.
-            rows =
-                MergeRows(rows);
-
-            foreach (PrintServerPrinterModel row in rows)
-            {
-                row.Category = "Printer";
-
-                if (string.IsNullOrWhiteSpace(
-                        row.State))
-                {
-                    row.State =
-                        row.Present
-                            ? "Printer"
-                            : "Not Present";
-                }
-            }
-
-            return rows
+            // IMPORTANT:
+            // Do NOT de-duplicate by printer name.
+            // Windows Devices & Printers can legitimately contain multiple
+            // printer containers with the same display name, for example
+            // multiple copies of the same printer model.
+            //
+            // Therefore every Shell item remains a separate row.
+            return result
                 .OrderBy(
-                    x => x.PrinterName,
+                    item => item.PrinterName,
+                    StringComparer.OrdinalIgnoreCase)
+                .ThenBy(
+                    item => item.DeviceId,
                     StringComparer.OrdinalIgnoreCase)
                 .ToList();
         }
 
         // =============================================================
-        // SHELL: DEVICES AND PRINTERS
+        // WINDOWS DEVICES & PRINTERS
         // =============================================================
-        private static void AddShellDeviceAndPrinterItems(
+        private static void EnumerateWindowsPrinterItems(
             string server,
-            List<PrintServerPrinterModel> rows)
+            Dictionary<string, QueueInfo> queues,
+            List<PrintServerPrinterModel> result)
         {
             object? shellObject =
                 CreateShellApplication();
 
             if (shellObject == null)
-                return;
+            {
+                throw new InvalidOperationException(
+                    "Shell.Application is not available.");
+            }
 
-            dynamic shell =
-                shellObject;
-
+            dynamic shell = shellObject;
             dynamic? folder = null;
             dynamic? items = null;
 
@@ -112,14 +109,16 @@ namespace Driver_Manager_Windows_10_11.Services
                         DevicesAndPrintersNamespace);
 
                 if (folder == null)
-                    return;
+                {
+                    throw new InvalidOperationException(
+                        "Windows Devices and Printers namespace could not be opened.");
+                }
 
                 items =
                     folder.Items();
 
                 int count =
-                    Convert.ToInt32(
-                        items.Count);
+                    Convert.ToInt32(items.Count);
 
                 for (int index = 0;
                      index < count;
@@ -133,102 +132,17 @@ namespace Driver_Manager_Windows_10_11.Services
                             items.Item(index);
 
                         if (item == null)
-                            continue;
-
-                        string name =
-                            SafeString(item.Name);
-
-                        string type =
-                            SafeString(item.Type);
-
-                        string path =
-                            SafeString(item.Path);
-
-                        if (!LooksLikePrinter(
-                                name,
-                                type,
-                                path))
                         {
                             continue;
                         }
 
-                        AddOrUpdate(
-                            rows,
-                            CreateShellRow(
-                                server,
-                                name,
-                                path,
-                                "Devices and Printers",
-                                type));
-                    }
-                    catch
-                    {
-                    }
-                    finally
-                    {
-                        ReleaseComObject(item);
-                    }
-                }
-            }
-            finally
-            {
-                ReleaseComObject(items);
-                ReleaseComObject(folder);
-                ReleaseComObject(shell);
-            }
-        }
-
-        // =============================================================
-        // SHELL: PRINTERS FOLDER
-        // =============================================================
-        private static void AddShellPrinterFolder(
-            string server,
-            List<PrintServerPrinterModel> rows)
-        {
-            object? shellObject =
-                CreateShellApplication();
-
-            if (shellObject == null)
-                return;
-
-            dynamic shell =
-                shellObject;
-
-            dynamic? folder = null;
-            dynamic? items = null;
-
-            try
-            {
-                folder =
-                    shell.NameSpace(
-                        "shell:PrintersFolder");
-
-                if (folder == null)
-                    return;
-
-                items =
-                    folder.Items();
-
-                int count =
-                    Convert.ToInt32(
-                        items.Count);
-
-                for (int index = 0;
-                     index < count;
-                     index++)
-                {
-                    dynamic? item = null;
-
-                    try
-                    {
-                        item =
-                            items.Item(index);
-
-                        if (item == null)
-                            continue;
-
                         string name =
                             SafeString(item.Name);
+
+                        if (string.IsNullOrWhiteSpace(name))
+                        {
+                            continue;
+                        }
 
                         string type =
                             SafeString(item.Type);
@@ -236,80 +150,41 @@ namespace Driver_Manager_Windows_10_11.Services
                         string path =
                             SafeString(item.Path);
 
-                        if (string.IsNullOrWhiteSpace(name))
+                        // STANDARD FILTER:
+                        // Windows DeviceContainer category IDs identify
+                        // printer/fax devices using the PrintFax category.
+                        bool isPrinter =
+                            IsPrinterCategory(item);
+
+                        // Some Windows builds expose "Printer" in Type
+                        // while CategoryIds are unavailable. This is still
+                        // standard metadata, not a model/vendor keyword.
+                        if (!isPrinter &&
+                            type.Contains(
+                                "printer",
+                                StringComparison.OrdinalIgnoreCase))
+                        {
+                            isPrinter = true;
+                        }
+
+                        if (!isPrinter)
+                        {
                             continue;
+                        }
 
-                        AddOrUpdate(
-                            rows,
-                            CreateShellRow(
-                                server,
-                                name,
-                                path,
-                                "Printers Folder",
-                                type));
-                    }
-                    catch
-                    {
-                    }
-                    finally
-                    {
-                        ReleaseComObject(item);
-                    }
-                }
-            }
-            finally
-            {
-                ReleaseComObject(items);
-                ReleaseComObject(folder);
-                ReleaseComObject(shell);
-            }
-        }
+                        string key =
+                            NormalizeName(name);
 
-        // =============================================================
-        // WMI: WIN32_PRINTER
-        // =============================================================
-        private static void AddWin32Printers(
-            string server,
-            List<PrintServerPrinterModel> rows)
-        {
-            ManagementScope scope =
-                CreateScope(server);
+                        QueueInfo? queue =
+                            queues.TryGetValue(
+                                key,
+                                out QueueInfo? found)
+                                    ? found
+                                    : FindQueueByFriendlyName(
+                                        name,
+                                        queues);
 
-            scope.Connect();
-
-            using var searcher =
-                new ManagementObjectSearcher(
-                    scope,
-                    new ObjectQuery(
-                        "SELECT Name, DriverName, PortName, Status, " +
-                        "ShareName, Shared, Published, WorkOffline, " +
-                        "PrinterStatus, PNPDeviceID " +
-                        "FROM Win32_Printer"));
-
-            using ManagementObjectCollection collection =
-                searcher.Get();
-
-            foreach (ManagementObject printer
-                     in collection)
-            {
-                try
-                {
-                    string name =
-                        SafeManagementString(
-                            printer,
-                            "Name");
-
-                    if (string.IsNullOrWhiteSpace(name))
-                        continue;
-
-                    PrintServerPrinterModel? row =
-                        FindExact(
-                            rows,
-                            name);
-
-                    if (row == null)
-                    {
-                        row =
+                        var row =
                             new PrintServerPrinterModel
                             {
                                 ServerName =
@@ -322,617 +197,312 @@ namespace Driver_Manager_Windows_10_11.Services
                                     "Printer",
 
                                 Source =
-                                    "Win32_Printer",
+                                    "Devices & Printers",
+
+                                DeviceId =
+                                    path,
+
+                                Manufacturer =
+                                    Safe(queue?.Manufacturer),
+
+                                DriverName =
+                                    Safe(queue?.DriverName),
+
+                                PortName =
+                                    Safe(queue?.PortName),
+
+                                ShareName =
+                                    Safe(queue?.ShareName),
+
+                                Status =
+                                    Safe(queue?.Status),
+
+                                PrinterState =
+                                    Safe(queue?.Status),
+
+                                State =
+                                    "Printer",
+
+                                Reason =
+                                    string.IsNullOrWhiteSpace(type)
+                                        ? "Printer shown in Windows Devices & Printers."
+                                        : $"Printer shown in Windows Devices & Printers ({type}).",
+
+                                JobCount =
+                                    "0",
+
+                                Jobs =
+                                    "",
 
                                 Present =
                                     true,
 
-                                State =
-                                    "Printer"
+                                Shared =
+                                    queue?.Shared ?? false,
+
+                                Published =
+                                    queue?.Published ?? false,
+
+                                WorkOffline =
+                                    queue?.WorkOffline ?? false,
+
+                                ClassGuid =
+                                    PrinterClassGuid
                             };
 
-                        rows.Add(row);
-                    }
-
-                    row.DriverName =
-                        FirstNonEmpty(
-                            row.DriverName,
-                            SafeManagementString(
-                                printer,
-                                "DriverName"));
-
-                    row.PortName =
-                        FirstNonEmpty(
-                            row.PortName,
-                            SafeManagementString(
-                                printer,
-                                "PortName"));
-
-                    row.ShareName =
-                        FirstNonEmpty(
-                            row.ShareName,
-                            SafeManagementString(
-                                printer,
-                                "ShareName"));
-
-                    row.Status =
-                        FirstNonEmpty(
-                            row.Status,
-                            SafeManagementString(
-                                printer,
-                                "Status"));
-
-                    row.PrinterState =
-                        FirstNonEmpty(
-                            row.PrinterState,
-                            row.Status);
-
-                    row.Shared |=
-                        SafeManagementBool(
-                            printer,
-                            "Shared");
-
-                    row.Published |=
-                        SafeManagementBool(
-                            printer,
-                            "Published");
-
-                    row.WorkOffline |=
-                        SafeManagementBool(
-                            printer,
-                            "WorkOffline");
-
-                    row.DeviceId =
-                        FirstNonEmpty(
-                            row.DeviceId,
-                            SafeManagementString(
-                                printer,
-                                "PNPDeviceID"));
-
-                    row.Manufacturer =
-                        FirstNonEmpty(
-                            row.Manufacturer,
-                            DetectManufacturer(
-                                name + " " +
-                                row.DriverName));
-
-                    if (row.WorkOffline)
-                    {
-                        row.State =
-                            "Offline";
-
-                        row.Reason =
-                            "Windows reports this printer queue as Work Offline.";
-                    }
-                    else
-                    {
-                        row.State =
-                            "Printer";
-
-                        row.Reason =
-                            "Printer queue found.";
-                    }
-                }
-                finally
-                {
-                    printer.Dispose();
-                }
-            }
-        }
-
-        // =============================================================
-        // WMI: PNP PRINTER DEVICES
-        // =============================================================
-        private static void AddPnpPrinters(
-            string server,
-            List<PrintServerPrinterModel> rows)
-        {
-            ManagementScope scope =
-                CreateScope(server);
-
-            scope.Connect();
-
-            using var searcher =
-                new ManagementObjectSearcher(
-                    scope,
-                    new ObjectQuery(
-                        "SELECT Name, Caption, DeviceID, PNPDeviceID, " +
-                        "Manufacturer, PNPClass, ClassGuid, Status, " +
-                        "ConfigManagerErrorCode, Present " +
-                        "FROM Win32_PnPEntity"));
-
-            using ManagementObjectCollection collection =
-                searcher.Get();
-
-            foreach (ManagementObject device
-                     in collection)
-            {
-                string name =
-                    FirstNonEmpty(
-                        SafeManagementString(
-                            device,
-                            "Name"),
-                        SafeManagementString(
-                            device,
-                            "Caption"),
-                        SafeManagementString(
-                            device,
-                            "DeviceID"));
-
-                if (string.IsNullOrWhiteSpace(name))
-                    continue;
-
-                string pnpClass =
-                    SafeManagementString(
-                        device,
-                        "PNPClass");
-
-                string classGuid =
-                    SafeManagementString(
-                        device,
-                        "ClassGuid");
-
-                string manufacturer =
-                    SafeManagementString(
-                        device,
-                        "Manufacturer");
-
-                string deviceId =
-                    FirstNonEmpty(
-                        SafeManagementString(
-                            device,
-                            "PNPDeviceID"),
-                        SafeManagementString(
-                            device,
-                            "DeviceID"));
-
-                if (!IsPrinterRelated(
-                        name,
-                        pnpClass,
-                        classGuid,
-                        manufacturer))
-                {
-                    continue;
-                }
-
-                bool? present =
-                    SafeManagementNullableBool(
-                        device,
-                        "Present");
-
-                bool isPresent =
-                    present ?? true;
-
-                PrintServerPrinterModel? row =
-                    FindExact(
-                        rows,
-                        name);
-
-                if (row == null)
-                {
-                    row =
-                        new PrintServerPrinterModel
-                        {
-                            ServerName =
-                                server,
-
-                            PrinterName =
-                                name,
-
-                            Category =
-                                "Printer",
-
-                            Source =
-                                "PnP Device",
-
-                            DeviceId =
-                                deviceId,
-
-                            Manufacturer =
-                                manufacturer,
-
-                            ClassGuid =
-                                string.IsNullOrWhiteSpace(
-                                    classGuid)
-                                    ? PrinterClassGuid
-                                    : classGuid,
-
-                            Status =
-                                SafeManagementString(
-                                    device,
-                                    "Status"),
-
-                            Present =
-                                isPresent,
-
-                            State =
-                                isPresent
-                                    ? "Printer"
-                                    : "Not Present",
-
-                            Reason =
-                                isPresent
-                                    ? "Printer device found in Windows PnP inventory."
-                                    : "Printer device remains in Windows PnP inventory but is not currently present."
-                        };
-
-                    rows.Add(row);
-                }
-                else
-                {
-                    row.Source =
-                        MergeSource(
-                            row.Source,
-                            "PnP Device");
-
-                    row.DeviceId =
-                        FirstNonEmpty(
-                            row.DeviceId,
-                            deviceId);
-
-                    row.Manufacturer =
-                        FirstNonEmpty(
-                            row.Manufacturer,
-                            manufacturer);
-
-                    row.ClassGuid =
-                        FirstNonEmpty(
-                            row.ClassGuid,
-                            classGuid);
-
-                    row.Status =
-                        FirstNonEmpty(
-                            row.Status,
-                            SafeManagementString(
-                                device,
-                                "Status"));
-
-                    if (present.HasValue)
-                    {
-                        row.Present =
-                            present.Value;
-
-                        if (!present.Value)
+                        if (row.WorkOffline)
                         {
                             row.State =
-                                "Not Present";
+                                "Offline";
 
                             row.Reason =
-                                "Printer device remains in Windows PnP inventory but is not currently present.";
+                                "Windows reports this printer queue as Work Offline.";
                         }
+
+                        result.Add(row);
+                    }
+                    catch
+                    {
+                        // Ignore one Shell item and continue.
+                    }
+                    finally
+                    {
+                        ReleaseComObject(item);
                     }
                 }
             }
+            finally
+            {
+                ReleaseComObject(items);
+                ReleaseComObject(folder);
+                ReleaseComObject(shell);
+            }
         }
 
-        // =============================================================
-        // FILTER
-        // =============================================================
-        private static bool IsPrinterRelated(
-            string name,
-            string pnpClass,
-            string classGuid,
-            string manufacturer)
+        private static bool IsPrinterCategory(
+            dynamic item)
         {
-            if (string.Equals(
-                    classGuid,
-                    PrinterClassGuid,
-                    StringComparison.OrdinalIgnoreCase))
+            try
             {
-                return true;
+                object? value =
+                    item.ExtendedProperty(
+                        CategoryIdsProperty);
+
+                foreach (string category in
+                         ToStringValues(value))
+                {
+                    // Windows' standard printer category is in the
+                    // PrintFax category family. No vendor/model names
+                    // are required.
+                    if (category.StartsWith(
+                            "PrintFax",
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
+            }
+            catch
+            {
+                // Property may be unavailable for a particular Shell item.
             }
 
-            if (string.Equals(
-                    pnpClass,
-                    "Printer",
-                    StringComparison.OrdinalIgnoreCase))
+            return false;
+        }
+
+        private static IEnumerable<string> ToStringValues(
+            object? value)
+        {
+            if (value == null)
             {
-                return true;
+                yield break;
             }
 
-            string text =
-                $"{name} {manufacturer}";
+            if (value is string text)
+            {
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    yield return text.Trim();
+                }
 
-            return ContainsAny(
-                text,
-                "printer",
-                "print to pdf",
-                "onenote",
-                "fax",
-                "dcp-",
-                "pixma",
-                "g2010",
-                "g2020",
-                "g2030",
-                "ecotank",
-                "workforce",
-                "l3110",
-                "l3150",
-                "l3210",
-                "l3250",
-                "l4260",
-                "l5290",
-                "l550",
-                "smart tank",
-                "deskjet",
-                "laserjet",
-                "imageclass",
-                "imagerunner",
-                "brother",
-                "canon",
-                "epson",
-                "hp ",
-                "lexmark",
-                "xerox",
-                "kyocera",
-                "pantum",
-                "ricoh");
-        }
+                yield break;
+            }
 
-        private static bool LooksLikePrinter(
-            string name,
-            string type,
-            string path)
-        {
-            string text =
-                $"{name} {type} {path}";
+            if (value is Array array)
+            {
+                foreach (object? element in array)
+                {
+                    string? textValue =
+                        element?.ToString();
 
-            return ContainsAny(
-                text,
-                "printer",
-                "print to pdf",
-                "onenote",
-                "fax",
-                "dcp-",
-                "pixma",
-                "g2010",
-                "g2020",
-                "g2030",
-                "ecotank",
-                "workforce",
-                "l3110",
-                "l3150",
-                "l3210",
-                "l3250",
-                "l4260",
-                "l5290",
-                "l550",
-                "smart tank",
-                "deskjet",
-                "laserjet",
-                "imageclass",
-                "imagerunner",
-                "brother",
-                "canon",
-                "epson",
-                "hp ",
-                "lexmark",
-                "xerox",
-                "kyocera",
-                "pantum",
-                "ricoh");
+                    if (!string.IsNullOrWhiteSpace(
+                            textValue))
+                    {
+                        yield return textValue.Trim();
+                    }
+                }
+
+                yield break;
+            }
+
+            string fallback =
+                value.ToString() ?? "";
+
+            foreach (string line in fallback
+                .Split(
+                    new[] { ';', ',', '|', '\r', '\n' },
+                    StringSplitOptions.RemoveEmptyEntries |
+                    StringSplitOptions.TrimEntries))
+            {
+                yield return line;
+            }
         }
 
         // =============================================================
-        // MERGE
+        // WIN32_PRINTER - ENRICHMENT ONLY
         // =============================================================
-        private static List<PrintServerPrinterModel> MergeRows(
-            List<PrintServerPrinterModel> rows)
+        private static Dictionary<string, QueueInfo> GetPrinterQueues(
+            string server)
         {
             var result =
-                new List<PrintServerPrinterModel>();
+                new Dictionary<string, QueueInfo>(
+                    StringComparer.OrdinalIgnoreCase);
 
-            foreach (PrintServerPrinterModel row in rows)
+            try
             {
-                PrintServerPrinterModel? existing =
-                    FindExact(
-                        result,
-                        row.PrinterName);
+                ManagementScope scope =
+                    CreateScope(server);
 
-                if (existing == null)
+                scope.Connect();
+
+                using var searcher =
+                    new ManagementObjectSearcher(
+                        scope,
+                        new ObjectQuery(
+                            "SELECT Name, DriverName, PortName, Status, " +
+                            "ShareName, Shared, Published, WorkOffline, " +
+                            "PNPDeviceID FROM Win32_Printer"));
+
+                using ManagementObjectCollection collection =
+                    searcher.Get();
+
+                foreach (ManagementObject printer in collection)
                 {
-                    result.Add(row);
-                    continue;
+                    try
+                    {
+                        string name =
+                            SafeManagementString(
+                                printer,
+                                "Name");
+
+                        if (string.IsNullOrWhiteSpace(name))
+                        {
+                            continue;
+                        }
+
+                        result[
+                            NormalizeName(name)] =
+                            new QueueInfo
+                            {
+                                Name =
+                                    name,
+
+                                DriverName =
+                                    SafeManagementString(
+                                        printer,
+                                        "DriverName"),
+
+                                PortName =
+                                    SafeManagementString(
+                                        printer,
+                                        "PortName"),
+
+                                ShareName =
+                                    SafeManagementString(
+                                        printer,
+                                        "ShareName"),
+
+                                Status =
+                                    SafeManagementString(
+                                        printer,
+                                        "Status"),
+
+                                Shared =
+                                    SafeManagementBool(
+                                        printer,
+                                        "Shared"),
+
+                                Published =
+                                    SafeManagementBool(
+                                        printer,
+                                        "Published"),
+
+                                WorkOffline =
+                                    SafeManagementBool(
+                                        printer,
+                                        "WorkOffline"),
+
+                                PnpDeviceId =
+                                    SafeManagementString(
+                                        printer,
+                                        "PNPDeviceID")
+                            };
+                    }
+                    finally
+                    {
+                        printer.Dispose();
+                    }
                 }
-
-                existing.Source =
-                    MergeSource(
-                        existing.Source,
-                        row.Source);
-
-                existing.Category =
-                    "Printer";
-
-                existing.ShareName =
-                    FirstNonEmpty(
-                        existing.ShareName,
-                        row.ShareName);
-
-                existing.DriverName =
-                    FirstNonEmpty(
-                        existing.DriverName,
-                        row.DriverName);
-
-                existing.PortName =
-                    FirstNonEmpty(
-                        existing.PortName,
-                        row.PortName);
-
-                existing.PortMonitor =
-                    FirstNonEmpty(
-                        existing.PortMonitor,
-                        row.PortMonitor);
-
-                existing.Status =
-                    FirstNonEmpty(
-                        existing.Status,
-                        row.Status);
-
-                existing.PrinterState =
-                    FirstNonEmpty(
-                        existing.PrinterState,
-                        row.PrinterState);
-
-                existing.DeviceId =
-                    FirstNonEmpty(
-                        existing.DeviceId,
-                        row.DeviceId);
-
-                existing.Manufacturer =
-                    FirstNonEmpty(
-                        existing.Manufacturer,
-                        row.Manufacturer);
-
-                existing.ClassGuid =
-                    FirstNonEmpty(
-                        existing.ClassGuid,
-                        row.ClassGuid);
-
-                existing.Shared |=
-                    row.Shared;
-
-                existing.Published |=
-                    row.Published;
-
-                existing.WorkOffline |=
-                    row.WorkOffline;
-
-                if (!row.Present)
-                {
-                    existing.Present =
-                        false;
-
-                    existing.State =
-                        "Not Present";
-
-                    existing.Reason =
-                        row.Reason;
-                }
-
-                if (row.State == "Offline")
-                {
-                    existing.State =
-                        "Offline";
-
-                    existing.Reason =
-                        row.Reason;
-                }
+            }
+            catch
+            {
+                // Devices & Printers remains usable even if WMI
+                // enrichment is unavailable.
             }
 
             return result;
         }
 
-        private static void AddOrUpdate(
-            List<PrintServerPrinterModel> rows,
-            PrintServerPrinterModel newRow)
+        private static QueueInfo? FindQueueByFriendlyName(
+            string shellName,
+            Dictionary<string, QueueInfo> queues)
         {
-            if (!LooksLikePrinter(
-                    newRow.PrinterName,
-                    newRow.Category,
-                    newRow.DeviceId))
+            string shellKey =
+                NormalizeName(shellName);
+
+            foreach (QueueInfo queue
+                     in queues.Values)
             {
-                return;
+                if (NormalizeName(queue.Name) ==
+                    shellKey)
+                {
+                    return queue;
+                }
             }
 
-            PrintServerPrinterModel? existing =
-                FindExact(
-                    rows,
-                    newRow.PrinterName);
-
-            if (existing == null)
-            {
-                rows.Add(newRow);
-                return;
-            }
-
-            existing.Source =
-                MergeSource(
-                    existing.Source,
-                    newRow.Source);
-
-            existing.Category =
-                "Printer";
-
-            existing.DeviceId =
-                FirstNonEmpty(
-                    existing.DeviceId,
-                    newRow.DeviceId);
-
-            existing.Manufacturer =
-                FirstNonEmpty(
-                    existing.Manufacturer,
-                    newRow.Manufacturer);
-
-            existing.Status =
-                FirstNonEmpty(
-                    existing.Status,
-                    newRow.Status);
-
-            existing.Reason =
-                FirstNonEmpty(
-                    existing.Reason,
-                    newRow.Reason);
-        }
-
-        private static PrintServerPrinterModel CreateShellRow(
-            string server,
-            string name,
-            string path,
-            string source,
-            string type)
-        {
-            return new PrintServerPrinterModel
-            {
-                ServerName =
-                    server,
-
-                PrinterName =
-                    name,
-
-                Category =
-                    "Printer",
-
-                Source =
-                    source,
-
-                DeviceId =
-                    path,
-
-                Manufacturer =
-                    DetectManufacturer(
-                        name),
-
-                ClassGuid =
-                    PrinterClassGuid,
-
-                Status =
-                    "Available",
-
-                PrinterState =
-                    "Available",
-
-                State =
-                    "Printer",
-
-                Reason =
-                    string.IsNullOrWhiteSpace(type)
-                        ? "Printer found in Windows Devices and Printers."
-                        : $"Printer found in Windows ({type}).",
-
-                JobCount =
-                    "0",
-
-                Jobs =
-                    "",
-
-                Present =
-                    true
-            };
+            return null;
         }
 
         // =============================================================
         // HELPERS
         // =============================================================
+        private sealed class QueueInfo
+        {
+            public string Name { get; set; } = "";
+            public string DriverName { get; set; } = "";
+            public string PortName { get; set; } = "";
+            public string ShareName { get; set; } = "";
+            public string Status { get; set; } = "";
+            public string PnpDeviceId { get; set; } = "";
+            public string Manufacturer { get; set; } = "";
+            public bool Shared { get; set; }
+            public bool Published { get; set; }
+            public bool WorkOffline { get; set; }
+
+            // Kept for future enrichment without changing the standard
+            // detection logic.
+        }
+
         private static object? CreateShellApplication()
         {
             Type? shellType =
@@ -940,92 +510,36 @@ namespace Driver_Manager_Windows_10_11.Services
                     "Shell.Application");
 
             if (shellType == null)
+            {
                 return null;
+            }
 
             return Activator.CreateInstance(
                 shellType);
         }
 
-        private static PrintServerPrinterModel? FindExact(
-            List<PrintServerPrinterModel> rows,
-            string name)
+        private static ManagementScope CreateScope(
+            string server)
         {
-            string key =
-                NormalizeName(name);
-
-            return rows.FirstOrDefault(
-                item =>
-                    NormalizeName(
-                        item.PrinterName) == key);
+            return new ManagementScope(
+                $@"\\{server}\root\cimv2");
         }
 
-        private static string MergeSource(
-            string first,
-            string second)
+        private static bool IsLocalServer(
+            string server)
         {
-            var parts =
-                new List<string>();
-
-            AddPart(parts, first);
-            AddPart(parts, second);
-
-            return string.Join(
-                " + ",
-                parts);
-        }
-
-        private static void AddPart(
-            List<string> parts,
-            string value)
-        {
-            if (string.IsNullOrWhiteSpace(value))
-                return;
-
-            foreach (string part in value.Split(
-                '+',
-                StringSplitOptions.RemoveEmptyEntries |
-                StringSplitOptions.TrimEntries))
-            {
-                if (!parts.Contains(
-                        part,
-                        StringComparer.OrdinalIgnoreCase))
-                {
-                    parts.Add(part);
-                }
-            }
-        }
-
-        private static string FirstNonEmpty(
-            string first,
-            string second)
-        {
-            return !string.IsNullOrWhiteSpace(
-                first)
-                ? first
-                : second ?? "";
-        }
-
-        private static string FirstNonEmpty(
-            string first,
-            string second,
-            string third)
-        {
-            return FirstNonEmpty(
-                FirstNonEmpty(
-                    first,
-                    second),
-                third);
-        }
-
-        private static string NormalizeName(
-            string value)
-        {
-            return string.IsNullOrWhiteSpace(
-                value)
-                ? ""
-                : value
-                    .Trim()
-                    .ToLowerInvariant();
+            return
+                server.Equals(
+                    Environment.MachineName,
+                    StringComparison.OrdinalIgnoreCase)
+                ||
+                server.Equals(
+                    "localhost",
+                    StringComparison.OrdinalIgnoreCase)
+                ||
+                server.Equals(
+                    ".",
+                    StringComparison.OrdinalIgnoreCase);
         }
 
         private static string NormalizeServerName(
@@ -1056,102 +570,20 @@ namespace Driver_Manager_Windows_10_11.Services
             return server.Trim();
         }
 
-        private static bool IsLocalServer(
-            string server)
+        private static string NormalizeName(
+            string value)
         {
-            return
-                server.Equals(
-                    Environment.MachineName,
-                    StringComparison.OrdinalIgnoreCase)
-                ||
-                server.Equals(
-                    "localhost",
-                    StringComparison.OrdinalIgnoreCase)
-                ||
-                server.Equals(
-                    ".",
-                    StringComparison.OrdinalIgnoreCase);
+            return string.IsNullOrWhiteSpace(value)
+                ? ""
+                : value
+                    .Trim()
+                    .ToLowerInvariant();
         }
 
-        private static ManagementScope CreateScope(
-            string server)
+        private static string Safe(
+            string? value)
         {
-            return new ManagementScope(
-                $@"\\{server}\root\cimv2");
-        }
-
-        private static bool ContainsAny(
-            string text,
-            params string[] values)
-        {
-            foreach (string value in values)
-            {
-                if (text.Contains(
-                        value,
-                        StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        private static string DetectManufacturer(
-            string text)
-        {
-            if (ContainsAny(
-                    text,
-                    "canon"))
-                return "Canon";
-
-            if (ContainsAny(
-                    text,
-                    "epson"))
-                return "Epson";
-
-            if (ContainsAny(
-                    text,
-                    "brother"))
-                return "Brother";
-
-            if (ContainsAny(
-                    text,
-                    "hp ",
-                    "hewlett"))
-                return "HP";
-
-            if (ContainsAny(
-                    text,
-                    "lexmark"))
-                return "Lexmark";
-
-            if (ContainsAny(
-                    text,
-                    "xerox"))
-                return "Xerox";
-
-            if (ContainsAny(
-                    text,
-                    "kyocera"))
-                return "Kyocera";
-
-            if (ContainsAny(
-                    text,
-                    "ricoh"))
-                return "Ricoh";
-
-            if (ContainsAny(
-                    text,
-                    "pantum"))
-                return "Pantum";
-
-            if (ContainsAny(
-                    text,
-                    "microsoft"))
-                return "Microsoft";
-
-            return "";
+            return value?.Trim() ?? "";
         }
 
         private static string SafeString(
@@ -1159,8 +591,7 @@ namespace Driver_Manager_Windows_10_11.Services
         {
             try
             {
-                return value?.ToString()?.Trim()
-                       ?? "";
+                return value?.ToString()?.Trim() ?? "";
             }
             catch
             {
@@ -1177,8 +608,7 @@ namespace Driver_Manager_Windows_10_11.Services
                 object? value =
                     obj[property];
 
-                return value?.ToString()?.Trim()
-                       ?? "";
+                return value?.ToString()?.Trim() ?? "";
             }
             catch
             {
@@ -1204,40 +634,6 @@ namespace Driver_Manager_Windows_10_11.Services
             }
         }
 
-        private static bool? SafeManagementNullableBool(
-            ManagementObject obj,
-            string property)
-        {
-            try
-            {
-                object? value =
-                    obj[property];
-
-                if (value == null)
-                    return null;
-
-                return Convert.ToBoolean(
-                    value);
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        private static void TryAdd(
-            Action action)
-        {
-            try
-            {
-                action();
-            }
-            catch
-            {
-                // One source failing must not stop the other sources.
-            }
-        }
-
         private static void ReleaseComObject(
             object? value)
         {
@@ -1246,8 +642,7 @@ namespace Driver_Manager_Windows_10_11.Services
                 if (value != null &&
                     Marshal.IsComObject(value))
                 {
-                    Marshal.FinalReleaseComObject(
-                        value);
+                    Marshal.FinalReleaseComObject(value);
                 }
             }
             catch
