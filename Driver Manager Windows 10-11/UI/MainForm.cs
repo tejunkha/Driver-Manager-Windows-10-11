@@ -3,11 +3,10 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using Driver_Manager_Windows_10_11.Forms;
-using Driver_Manager_Windows_10_11.Helpers;
+using System.Security.Principal;
+
 using Driver_Manager_Windows_10_11.Models;
 using Driver_Manager_Windows_10_11.Services;
-using Driver_Manager_Windows_10_11.UI;
 
 namespace Driver_Manager_Windows_10_11
 {
@@ -70,13 +69,8 @@ namespace Driver_Manager_Windows_10_11
         {
             InitializeComponent();
 
-            // Action bar styling: medium Windows 10/11 icons
-            UiStyle.ApplyActionBar(this);
-
-            // Sidebar styling: medium icons + consistent spacing
-            UiStyle.ApplySidebar(this);
-
-            ErrorHandler.Install();
+            // UI styling is handled locally to keep MainForm self-contained.
+            ApplyLocalUiStyle();
             InitializeUtilityUi();
             ActivityLogService.Log("APP START", "Application", "Driver Manager", "Success", $"Version {AppInfo.Version}");
 
@@ -122,7 +116,7 @@ namespace Driver_Manager_Windows_10_11
         // SYSTEM DRIVERS
         // =========================================================
         private async void btnSystemDrivers_Click(
-            object sender,
+            object? sender,
             EventArgs e)
         {
             if (isLoading)
@@ -158,7 +152,7 @@ namespace Driver_Manager_Windows_10_11
         // DRIVER STORE
         // =========================================================
         private async void btnDriverStore_Click(
-            object sender,
+            object? sender,
             EventArgs e)
         {
             if (isLoading)
@@ -194,7 +188,7 @@ namespace Driver_Manager_Windows_10_11
         // PRINTER DRIVERS
         // =========================================================
         private async void btnPrinterDrivers_Click(
-            object sender,
+            object? sender,
             EventArgs e)
         {
             if (isLoading)
@@ -229,7 +223,7 @@ namespace Driver_Manager_Windows_10_11
         // PRINTER PORTS
         // =========================================================
         private async void btnPrinterPorts_Click(
-            object sender,
+            object? sender,
             EventArgs e)
         {
             if (isLoading)
@@ -266,7 +260,7 @@ namespace Driver_Manager_Windows_10_11
         // INSTALLED PRINTERS (IPP / VENDOR)
         // =========================================================
         private async void btnPrinters_Click(
-            object sender,
+            object? sender,
             EventArgs e)
         {
             if (isLoading)
@@ -303,7 +297,7 @@ namespace Driver_Manager_Windows_10_11
         // PRINT SERVERS
         // =========================================================
         private async void btnGhostPrinter_Click(
-            object sender,
+            object? sender,
             EventArgs e)
         {
             if (isLoading)
@@ -724,7 +718,7 @@ namespace Driver_Manager_Windows_10_11
             }
             catch (Exception ex)
             {
-                ErrorHandler.ShowError(ex, "Load System Drivers");
+                ShowLocalError(ex, "Load System Drivers");
 
                 lblStatus.Text =
                     "Failed to load system drivers";
@@ -789,7 +783,7 @@ namespace Driver_Manager_Windows_10_11
             }
             catch (Exception ex)
             {
-                ErrorHandler.ShowError(ex, "Load Driver Store");
+                ShowLocalError(ex, "Load Driver Store");
 
                 lblStatus.Text =
                     "Failed to load Driver Store";
@@ -880,7 +874,7 @@ namespace Driver_Manager_Windows_10_11
             }
             catch (Exception ex)
             {
-                ErrorHandler.ShowError(ex, "Load Printer Drivers");
+                ShowLocalError(ex, "Load Printer Drivers");
 
                 lblStatus.Text =
                     "Failed to load printer drivers";
@@ -945,7 +939,7 @@ namespace Driver_Manager_Windows_10_11
             }
             catch (Exception ex)
             {
-                ErrorHandler.ShowError(ex, "Load Printer Ports");
+                ShowLocalError(ex, "Load Printer Ports");
 
                 lblStatus.Text =
                     "Failed to load printer ports";
@@ -1027,7 +1021,7 @@ namespace Driver_Manager_Windows_10_11
             }
             catch (Exception ex)
             {
-                ErrorHandler.ShowError(ex, "Load Printers");
+                ShowLocalError(ex, "Load Printers");
 
                 lblStatus.Text =
                     "Failed to load installed printers";
@@ -1132,7 +1126,7 @@ namespace Driver_Manager_Windows_10_11
             }
             catch (Exception ex)
             {
-                ErrorHandler.ShowError(
+                ShowLocalError(
                     ex,
                     "Load Devices & Printers");
 
@@ -1160,7 +1154,7 @@ namespace Driver_Manager_Windows_10_11
         // REFRESH
         // =========================================================
         private async void btnRefresh_Click(
-            object sender,
+            object? sender,
             EventArgs e)
         {
             if (isLoading)
@@ -1212,7 +1206,7 @@ namespace Driver_Manager_Windows_10_11
         // SEARCH
         // =========================================================
         private void txtSearch_TextChanged(
-            object sender,
+            object? sender,
             EventArgs e)
         {
             string keyword =
@@ -1443,7 +1437,7 @@ namespace Driver_Manager_Windows_10_11
             };
 
             modeBadge.SetAdministratorMode(
-                AdminHelper.IsAdministrator());
+                IsAdministrator());
 
             pnlSidebar.Controls.Add(modeBadge);
             modeBadge.BringToFront();
@@ -1516,8 +1510,11 @@ namespace Driver_Manager_Windows_10_11
             object? sender,
             EventArgs e)
         {
-            using AboutForm aboutForm = new AboutForm();
-            aboutForm.ShowDialog(this);
+            MessageBox.Show(
+                $"{AppInfo.Name}\nVersion {AppInfo.Version}\n\nDriver Manager - Windows 10 / 11",
+                "About",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
         }
 
         private void btnActivityLog_Click(
@@ -1531,8 +1528,86 @@ namespace Driver_Manager_Windows_10_11
                 "Success",
                 "Opened activity log");
 
-            using ActivityLogForm activityLogForm = new ActivityLogForm();
-            activityLogForm.ShowDialog(this);
+            MessageBox.Show(
+                "Activity Log ถูกบันทึกโดย ActivityLogService แล้ว\n\n" +
+                "สามารถเปิดไฟล์ Logs\activity.jsonl ในโฟลเดอร์โปรแกรมได้",
+                "Activity Log",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information);
+        }
+
+        private bool IsAdministrator()
+        {
+            try
+            {
+                using WindowsIdentity identity = WindowsIdentity.GetCurrent();
+                WindowsPrincipal principal = new WindowsPrincipal(identity);
+                return principal.IsInRole(WindowsBuiltInRole.Administrator);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private void ShowLocalError(Exception ex, string operation = "")
+        {
+            string message = string.IsNullOrWhiteSpace(operation)
+                ? ex.Message
+                : $"{operation}\n\n{ex.Message}";
+
+            MessageBox.Show(
+                message,
+                "Driver Manager",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
+        }
+
+        private void ApplyLocalUiStyle()
+        {
+            try
+            {
+                // Refresh button
+                btnRefresh.Text = "Refresh";
+                btnRefresh.FlatStyle = FlatStyle.Flat;
+                btnRefresh.FlatAppearance.BorderSize = 1;
+                btnRefresh.FlatAppearance.BorderColor = Color.FromArgb(203, 213, 225);
+                btnRefresh.BackColor = Color.White;
+                btnRefresh.ForeColor = Color.FromArgb(15, 23, 42);
+                btnRefresh.Cursor = Cursors.Hand;
+
+                // Delete button
+                btnDelete.Text = "Delete";
+                btnDelete.FlatStyle = FlatStyle.Flat;
+                btnDelete.FlatAppearance.BorderSize = 0;
+                btnDelete.BackColor = Color.FromArgb(226, 232, 240);
+                btnDelete.ForeColor = Color.FromArgb(148, 163, 184);
+                btnDelete.Cursor = Cursors.Hand;
+
+                // Sidebar
+                Button[] buttons =
+                {
+                    btnSystemDrivers,
+                    btnDriverStore,
+                    btnPrinterDrivers,
+                    btnPrinterPorts,
+                    btnPrinters,
+                    btnGhostPrinter
+                };
+
+                foreach (Button button in buttons)
+                {
+                    button.FlatStyle = FlatStyle.Flat;
+                    button.FlatAppearance.BorderSize = 0;
+                    button.BackColor = Color.FromArgb(30, 41, 59);
+                    button.ForeColor = Color.FromArgb(226, 232, 240);
+                    button.Cursor = Cursors.Hand;
+                }
+            }
+            catch
+            {
+                // Styling failure must never stop the application.
+            }
         }
 
         // =========================================================
@@ -1573,7 +1648,8 @@ namespace Driver_Manager_Windows_10_11
                 currentPage == "Driver Store" ||
                 currentPage == "Printer Drivers" ||
                 currentPage == "Printer Ports" ||
-                currentPage == "Printers";
+                currentPage == "Printers" ||
+                currentPage == "Print Server";
 
             bool hasSelection =
                 dgvDrivers.SelectedRows.Count > 0 &&
@@ -1690,6 +1766,14 @@ namespace Driver_Manager_Windows_10_11
                             installedPrinter,
                             out message));
                 }
+                else if (currentPage == "Print Server" &&
+                         tag is PrintServerPrinterModel devicePrinter)
+                {
+                    success = await Task.Run(() =>
+                        DriverActionService.DeleteDevicesAndPrintersPrinter(
+                            devicePrinter,
+                            out message));
+                }
                 else
                 {
                     success = false;
@@ -1752,6 +1836,11 @@ namespace Driver_Manager_Windows_10_11
             if (tag is InstalledPrinterModel installedPrinter)
                 return installedPrinter.Name;
 
+            if (currentPage == "Print Server" &&
+                tag is PrintServerPrinterModel devicePrinter)
+            {
+                return devicePrinter.PrinterName;
+            }
 
             return "รายการที่เลือก";
         }
@@ -1782,9 +1871,10 @@ namespace Driver_Manager_Windows_10_11
                        "จะไม่ลบ Printer Driver";
             }
 
-            if (tag is PrintServerPrinterModel)
+            if (currentPage == "Print Server" &&
+                tag is PrintServerPrinterModel)
             {
-                return "การดำเนินการนี้จะลบ Print Server Device หรือ Printer Queue ที่ค้างอยู่\n" +
+                return "การดำเนินการนี้จะลบ Printer / Device ออกจาก Windows Devices & Printers\n" +
                        "จะไม่ลบ Driver Package ออกจาก Driver Store";
             }
 
@@ -1836,7 +1926,7 @@ namespace Driver_Manager_Windows_10_11
         // PRINTER DRIVER DETAILS
         // =========================================================
         private void dgvDrivers_CellDoubleClick(
-            object sender,
+            object? sender,
             DataGridViewCellEventArgs e)
         {
             // ไม่ทำงานเมื่อดับเบิลคลิก Header
