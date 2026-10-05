@@ -6,6 +6,7 @@ using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading;
 
 using Driver_Manager_Windows_10_11.Models;
 
@@ -236,6 +237,7 @@ namespace Driver_Manager_Windows_10_11.Services
 
         // =========================================================
         // DEVICES & PRINTERS
+        // Windows Devices & Printers -> Remove device
         // =========================================================
         public static bool DeleteDevicesAndPrintersPrinter(
             PrintServerPrinterModel printer,
@@ -249,159 +251,92 @@ namespace Driver_Manager_Windows_10_11.Services
                 return false;
             }
 
-            string printerName =
-                printer.PrinterName?.Trim() ?? "";
-
-            // -----------------------------------------------------
-            // 1. Prefer the exact Device Instance ID captured from
-            //    the selected Devices & Printers Shell item.
-            // -----------------------------------------------------
-            string exactPnpId =
-                FirstNonEmpty(
-                    printer.DeviceInstanceId,
-                    printer.DeviceId);
-
-            if (IsLikelyPnpDeviceId(exactPnpId))
-            {
-                if (RemovePnpDevice(
-                        exactPnpId,
-                        out message))
-                {
-                    return true;
-                }
-
-                // We found an exact PnP identity but Windows rejected it.
-                // Do not silently delete another printer.
-                return false;
-            }
-
-            // -----------------------------------------------------
-            // 2. Try the exact Shell item and its Remove/Uninstall
-            //    context verbs. This operates on the selected row,
-            //    so duplicate display names remain safe.
-            // -----------------------------------------------------
+            // Use the exact ShellPath of the selected row first.
+            // This follows the same Windows Devices & Printers item.
             if (!string.IsNullOrWhiteSpace(printer.ShellPath))
             {
-                if (TryRemoveShellPrinter(
+                bool shellSuccess =
+                    TryRemoveDeviceFromWindowsShell(
                         printer.ShellPath,
-                        out message))
+                        out string shellMessage);
+
+                if (shellSuccess)
                 {
+                    message = shellMessage;
                     return true;
                 }
+
+                message = shellMessage;
             }
 
-            // -----------------------------------------------------
-            // 3. If exactly one queue matches, remove the queue.
-            // -----------------------------------------------------
-            if (!string.IsNullOrWhiteSpace(printerName))
+            // Fallback: use the exact DeviceInstanceId.
+            string deviceInstanceId =
+                printer.DeviceInstanceId?.Trim() ?? "";
+
+            if (IsLikelyPnpDeviceId(deviceInstanceId))
             {
-                List<string> matchingQueues =
-                    FindPrinterQueueNames(printerName);
+                string output;
 
-                if (matchingQueues.Count == 1)
-                {
-                    return RemovePrinterQueue(
-                        matchingQueues[0],
-                        out message);
-                }
-
-                if (matchingQueues.Count > 1)
-                {
-                    message =
-                        "พบ Printer Queue ที่ตรงกับรายการนี้มากกว่า 1 รายการ\n\n" +
-                        "เพื่อป้องกันการลบผิด Printer โปรแกรมจึงหยุดการทำงาน\n\n" +
-                        string.Join(
-                            Environment.NewLine,
-                            matchingQueues);
-
-                    return false;
-                }
-            }
-
-            // -----------------------------------------------------
-            // 4. Last fallback: find matching printer-related PnP
-            //    instances even when Windows reports the device under
-            //    SoftwareDevice / WSD / PrintQueue instead of Printer.
-            // -----------------------------------------------------
-            List<string> pnpIds =
-                FindPrinterPnpDeviceIdsExpanded(
-                    printerName);
-
-            if (pnpIds.Count == 1)
-            {
-                return RemovePnpDevice(
-                    pnpIds[0],
-                    out message);
-            }
-
-            if (pnpIds.Count > 1)
-            {
-                message =
-                    "พบ Printer Device ที่ชื่อเหมือนกันหลายรายการ\n\n" +
-                    "เพื่อป้องกันการลบผิด Device โปรแกรมจึงไม่ลบอัตโนมัติ";
-
-                return false;
-            }
-
-            message =
-                "ไม่พบ Printer Queue หรือ Printer Device ที่สามารถลบได้\n\n" +
-                "รายการจาก Windows Devices & Printers ไม่มี Device Instance ID " +
-                "หรือ Printer Queue ที่สามารถผูกกับรายการที่เลือกได้";
-
-            return false;
-        }
-
-        private static bool RemovePnpDevice(
-            string deviceId,
-            out string message)
-        {
-            message = "";
-
-            if (!IsLikelyPnpDeviceId(deviceId))
-            {
-                message =
-                    "Device Instance ID ไม่ใช่ PnP Device ID ที่ Windows รองรับ";
-                return false;
-            }
-
-            string output;
-
-            int exitCode =
-                RunProcess(
+                int exitCode = RunProcess(
                     "pnputil.exe",
-                    $"/remove-device \"{SanitizeCommandValue(deviceId)}\"",
+                    $"/remove-device \"{SanitizeCommandValue(deviceInstanceId)}\"",
                     out output,
                     60_000);
 
-            if (exitCode == 0)
-            {
-                message =
-                    "ลบ Printer Device ที่เลือกออกจาก Windows เรียบร้อยแล้ว\n" +
-                    "Driver Store ไม่ถูกลบ";
+                if (exitCode == 0)
+                {
+                    message =
+                        "ลบ Printer Device ที่เลือกออกจาก Windows เรียบร้อยแล้ว\n" +
+                        "Driver Store ไม่ถูกลบ";
 
-                return true;
-            }
+                    return true;
+                }
 
-            message =
-                string.IsNullOrWhiteSpace(output)
-                    ? "Windows ไม่สามารถลบ Printer Device ที่เลือกได้"
-                    : "Windows ไม่สามารถลบ Printer Device ที่เลือกได้\n\n" +
+                message = string.IsNullOrWhiteSpace(output)
+                    ? "Windows ไม่สามารถ Remove device ได้"
+                    : "Windows ไม่สามารถ Remove device ได้\n\n" +
                       "รายละเอียดจาก Windows:\n" +
                       output.Trim();
+
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                message =
+                    "ไม่สามารถระบุ Device Instance ของรายการที่เลือกได้";
+            }
+
+            message +=
+                "\n\nโปรแกรมจึงไม่ลบ Printer Queue แทน " +
+                "เพื่อป้องกันการลบผิดรายการ";
 
             return false;
         }
 
-        private static bool TryRemoveShellPrinter(
+        // =========================================================
+        // WINDOWS SHELL -> REMOVE DEVICE
+        // =========================================================
+        private static bool TryRemoveDeviceFromWindowsShell(
             string shellPath,
             out string message)
         {
             message = "";
 
+            if (string.IsNullOrWhiteSpace(shellPath))
+            {
+                message = "ShellPath ว่าง";
+                return false;
+            }
+
+            const string devicesAndPrintersNamespace =
+                "::{26EE0668-A00A-44D7-9371-BEB064C98683}\\2\\::{A8A91A66-3A7D-4424-8D24-04E180695C7A}";
+
             object? shellObject = null;
             dynamic? shell = null;
             dynamic? folder = null;
             dynamic? items = null;
+            dynamic? selectedItem = null;
 
             try
             {
@@ -410,7 +345,7 @@ namespace Driver_Manager_Windows_10_11.Services
 
                 if (shellType == null)
                 {
-                    message = "Shell.Application ไม่พร้อมใช้งาน";
+                    message = "ไม่พบ Shell.Application";
                     return false;
                 }
 
@@ -419,169 +354,214 @@ namespace Driver_Manager_Windows_10_11.Services
 
                 if (shellObject == null)
                 {
-                    message = "ไม่สามารถเปิด Windows Shell ได้";
+                    message =
+                        "ไม่สามารถสร้าง Shell.Application ได้";
                     return false;
                 }
 
                 shell = shellObject;
 
-                const string namespacePath =
-                    "::{26EE0668-A00A-44D7-9371-BEB064C98683}\\2\\::{A8A91A66-3A7D-4424-8D24-04E180695C7A}";
-
-                folder = shell.NameSpace(namespacePath);
+                folder =
+                    shell.NameSpace(
+                        devicesAndPrintersNamespace);
 
                 if (folder == null)
+                {
+                    message =
+                        "ไม่สามารถเปิด Windows Devices & Printers ได้";
                     return false;
+                }
 
                 items = folder.Items();
 
                 int count =
                     Convert.ToInt32(items.Count);
 
-                for (int index = 0; index < count; index++)
+                // Find the exact Shell item using ShellPath.
+                for (int i = 0; i < count; i++)
                 {
                     dynamic? item = null;
-                    dynamic? verbs = null;
 
                     try
                     {
-                        item = items.Item(index);
+                        item = items.Item(i);
 
                         if (item == null)
                             continue;
 
-                        string path =
-                            Convert.ToString(item.Path)?.Trim() ?? "";
+                        string itemPath =
+                            SafeDynamicString(item.Path);
 
-                        if (!path.Equals(
+                        if (itemPath.Equals(
                                 shellPath.Trim(),
                                 StringComparison.OrdinalIgnoreCase))
                         {
-                            continue;
+                            selectedItem = item;
+                            item = null;
+                            break;
                         }
-
-                        // Canonical verbs first.
-                        string[] canonicalVerbs =
-                        {
-                            "remove",
-                            "uninstall",
-                            "delete",
-                            "remove device",
-                            "uninstall device"
-                        };
-
-                        foreach (string verbName in canonicalVerbs)
-                        {
-                            try
-                            {
-                                item.InvokeVerb(verbName);
-
-                                message =
-                                    "ลบ Printer / Device ที่เลือกจาก Windows Devices & Printers เรียบร้อยแล้ว\n" +
-                                    "Driver Store ไม่ถูกลบ";
-
-                                return true;
-                            }
-                            catch
-                            {
-                                // Try the next verb.
-                            }
-                        }
-
-                        // Localized display verbs.
-                        try
-                        {
-                            verbs = item.Verbs();
-                            int verbCount =
-                                Convert.ToInt32(verbs.Count);
-
-                            for (int v = 0; v < verbCount; v++)
-                            {
-                                dynamic? verb = null;
-
-                                try
-                                {
-                                    verb = verbs.Item(v);
-
-                                    string verbText =
-                                        Convert.ToString(verb.Name)?.Trim() ?? "";
-
-                                    if (!LooksLikeRemoveVerb(verbText))
-                                        continue;
-
-                                    verb.DoIt();
-
-                                    message =
-                                        "ลบ Printer / Device ที่เลือกจาก Windows Devices & Printers เรียบร้อยแล้ว\n" +
-                                        "Driver Store ไม่ถูกลบ";
-
-                                    return true;
-                                }
-                                catch
-                                {
-                                }
-                                finally
-                                {
-                                    ReleaseComObject(verb);
-                                }
-                            }
-                        }
-                        catch
-                        {
-                        }
-
-                        return false;
+                    }
+                    catch
+                    {
                     }
                     finally
                     {
-                        ReleaseComObject(verbs);
                         ReleaseComObject(item);
                     }
                 }
+
+                if (selectedItem == null)
+                {
+                    message =
+                        "ไม่พบ Printer ที่เลือกใน Windows Devices & Printers\n\n" +
+                        "ShellPath:\n" +
+                        shellPath;
+
+                    return false;
+                }
+
+                // Look for the actual Remove device verb.
+                dynamic? verbs = null;
+
+                try
+                {
+                    verbs = selectedItem.Verbs();
+
+                    int verbCount =
+                        Convert.ToInt32(verbs.Count);
+
+                    for (int i = 0; i < verbCount; i++)
+                    {
+                        dynamic? verb = null;
+
+                        try
+                        {
+                            verb = verbs.Item(i);
+
+                            if (verb == null)
+                                continue;
+
+                            string verbName =
+                                SafeDynamicString(verb.Name);
+
+                            if (!IsRemoveDeviceVerb(verbName))
+                                continue;
+
+                            verb.DoIt();
+
+                            Thread.Sleep(1500);
+
+                            message =
+                                "ลบ Printer Device ออกจาก Windows Devices & Printers เรียบร้อยแล้ว\n" +
+                                "Driver Store ไม่ถูกลบ";
+
+                            return true;
+                        }
+                        catch
+                        {
+                            // Try the next Shell verb.
+                        }
+                        finally
+                        {
+                            ReleaseComObject(verb);
+                        }
+                    }
+                }
+                finally
+                {
+                    ReleaseComObject(verbs);
+                }
+
+                // Fallback to the canonical Shell verb.
+                try
+                {
+                    selectedItem.InvokeVerb("remove");
+
+                    Thread.Sleep(1500);
+
+                    message =
+                        "ลบ Printer Device ออกจาก Windows Devices & Printers เรียบร้อยแล้ว\n" +
+                        "Driver Store ไม่ถูกลบ";
+
+                    return true;
+                }
+                catch
+                {
+                }
+
+                message =
+                    "พบ Printer ที่เลือกแล้ว แต่ Windows ไม่เปิดคำสั่ง Remove device สำหรับรายการนี้";
+
+                return false;
             }
             catch (Exception ex)
             {
-                message = ex.Message;
+                message =
+                    "ไม่สามารถเรียก Windows Remove device ได้\n\n" +
+                    ex.Message;
+
+                return false;
             }
             finally
             {
+                ReleaseComObject(selectedItem);
                 ReleaseComObject(items);
                 ReleaseComObject(folder);
                 ReleaseComObject(shell);
             }
+        }
+
+        // =========================================================
+        // CHECK REMOVE DEVICE VERB
+        // =========================================================
+        private static bool IsRemoveDeviceVerb(
+            string verbName)
+        {
+            if (string.IsNullOrWhiteSpace(verbName))
+                return false;
+
+            string text =
+                verbName
+                    .Replace("&", "")
+                    .Replace("...", "")
+                    .Trim()
+                    .ToLowerInvariant();
+
+            if (text.Contains("remove device"))
+                return true;
+
+            if (text.Equals("remove"))
+                return true;
+
+            if (text.Contains("remove"))
+                return true;
+
+            if (text.Contains("ลบอุปกรณ์"))
+                return true;
+
+            if (text.Contains("ลบ"))
+                return true;
+
+            if (text.Contains("นำออก"))
+                return true;
 
             return false;
         }
 
-        private static bool LooksLikeRemoveVerb(
-            string text)
+        // =========================================================
+        // SAFE DYNAMIC STRING
+        // =========================================================
+        private static string SafeDynamicString(
+            object? value)
         {
-            if (string.IsNullOrWhiteSpace(text))
-                return false;
-
-            string value =
-                text.ToLowerInvariant();
-
-            string[] keywords =
+            try
             {
-                "remove",
-                "uninstall",
-                "delete",
-                "เอาออก",
-                "ลบ",
-                "ถอนการติดตั้ง"
-            };
-
-            foreach (string keyword in keywords)
-            {
-                if (value.Contains(keyword,
-                    StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
+                return value?.ToString()?.Trim() ?? "";
             }
-
-            return false;
+            catch
+            {
+                return "";
+            }
         }
 
         // =========================================================
@@ -781,169 +761,6 @@ namespace Driver_Manager_Windows_10_11.Services
             catch
             {
                 // Advisory check only.
-            }
-
-            return false;
-        }
-
-        private static List<string> FindPrinterPnpDeviceIdsExpanded(
-            string printerName)
-        {
-            var result = new List<string>();
-
-            if (string.IsNullOrWhiteSpace(printerName))
-                return result;
-
-            string selected =
-                NormalizePrinterName(printerName);
-
-            try
-            {
-                using var searcher = new ManagementObjectSearcher(
-                    "SELECT PNPDeviceID, Name, Caption, ClassGuid, PNPClass, " +
-                    "Manufacturer, Status FROM Win32_PnPEntity");
-
-                using ManagementObjectCollection collection =
-                    searcher.Get();
-
-                foreach (ManagementObject device in collection)
-                {
-                    string pnpId =
-                        Convert.ToString(device["PNPDeviceID"])?.Trim() ?? "";
-
-                    if (string.IsNullOrWhiteSpace(pnpId))
-                        continue;
-
-                    string name =
-                        Convert.ToString(device["Name"])?.Trim() ?? "";
-
-                    string caption =
-                        Convert.ToString(device["Caption"])?.Trim() ?? "";
-
-                    string pnpClass =
-                        Convert.ToString(device["PNPClass"])?.Trim() ?? "";
-
-                    string classGuid =
-                        Convert.ToString(device["ClassGuid"])?.Trim() ?? "";
-
-                    string manufacturer =
-                        Convert.ToString(device["Manufacturer"])?.Trim() ?? "";
-
-                    string normalizedName =
-                        NormalizePrinterName(name);
-
-                    string normalizedCaption =
-                        NormalizePrinterName(caption);
-
-                    bool exact =
-                        normalizedName.Equals(
-                            selected,
-                            StringComparison.OrdinalIgnoreCase)
-                        ||
-                        normalizedCaption.Equals(
-                            selected,
-                            StringComparison.OrdinalIgnoreCase);
-
-                    bool contains =
-                        !exact &&
-                        (normalizedName.Contains(selected,
-                            StringComparison.OrdinalIgnoreCase)
-                         ||
-                         normalizedCaption.Contains(selected,
-                            StringComparison.OrdinalIgnoreCase));
-
-                    if (!exact && !contains)
-                        continue;
-
-                    bool printerRelated =
-                        pnpClass.Equals("Printer",
-                            StringComparison.OrdinalIgnoreCase)
-                        ||
-                        pnpClass.Equals("PrintQueue",
-                            StringComparison.OrdinalIgnoreCase)
-                        ||
-                        pnpClass.Equals("SoftwareDevice",
-                            StringComparison.OrdinalIgnoreCase)
-                        ||
-                        classGuid.Equals(
-                            "{4D36E979-E325-11CE-BFC1-08002BE10318}",
-                            StringComparison.OrdinalIgnoreCase)
-                        ||
-                        IsPrinterLikeInstanceId(pnpId)
-                        ||
-                        ContainsPrinterTerm(
-                            name + " " + manufacturer);
-
-                    if (!printerRelated)
-                        continue;
-
-                    AddUnique(
-                        result,
-                        pnpId);
-                }
-            }
-            catch
-            {
-            }
-
-            return result;
-        }
-
-        private static bool IsPrinterLikeInstanceId(
-            string deviceId)
-        {
-            string value =
-                deviceId ?? "";
-
-            return
-                value.StartsWith("USBPRINT\\",
-                    StringComparison.OrdinalIgnoreCase)
-                ||
-                value.StartsWith("PRINTENUM\\",
-                    StringComparison.OrdinalIgnoreCase)
-                ||
-                value.StartsWith("SWD\\PRINTENUM\\",
-                    StringComparison.OrdinalIgnoreCase)
-                ||
-                value.StartsWith("SWD\\DAFUPnPProvider\\",
-                    StringComparison.OrdinalIgnoreCase)
-                ||
-                value.StartsWith("WSDPRINT\\",
-                    StringComparison.OrdinalIgnoreCase)
-                ||
-                value.StartsWith("DOT4PRINT\\",
-                    StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static bool ContainsPrinterTerm(
-            string text)
-        {
-            string value =
-                text ?? "";
-
-            string[] terms =
-            {
-                "printer",
-                "print queue",
-                "printqueue",
-                "dcp-",
-                "pixma",
-                "deskjet",
-                "laserjet",
-                "imageclass",
-                "imagerunner",
-                "ecotank",
-                "workforce",
-                "smart tank"
-            };
-
-            foreach (string term in terms)
-            {
-                if (value.Contains(term,
-                    StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
             }
 
             return false;
@@ -1173,18 +990,6 @@ namespace Driver_Manager_Windows_10_11.Services
                 ReleaseComObject(items);
                 ReleaseComObject(folder);
                 ReleaseComObject(shell);
-            }
-
-            return "";
-        }
-
-        private static string FirstNonEmpty(
-            params string[] values)
-        {
-            foreach (string value in values)
-            {
-                if (!string.IsNullOrWhiteSpace(value))
-                    return value.Trim();
             }
 
             return "";
