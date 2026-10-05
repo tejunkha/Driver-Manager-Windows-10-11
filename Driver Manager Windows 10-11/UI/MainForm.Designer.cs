@@ -96,12 +96,10 @@ namespace Driver_Manager_Windows_10_11
             btnPrinterPorts = new Button();
             btnPrinters = new Button();
             btnGhostPrinter = new Button();
-
             pnlGhostStatus = new Panel();
-            lblGhostStatusIcon = new Label();
-            lblGhostStatusTitle = new Label();
             lblGhostStatusDescription = new Label();
-
+            lblGhostStatusTitle = new Label();
+            lblGhostStatusIcon = new Label();
             pnlMain = new Panel();
             pnlContent = new Panel();
             dgvDrivers = new DataGridView();
@@ -113,15 +111,16 @@ namespace Driver_Manager_Windows_10_11
             colStatus = new DataGridViewTextBoxColumn();
             colSigned = new DataGridViewTextBoxColumn();
             pnlToolbar = new Panel();
+            btnDelete = new Button();
             txtSearch = new TextBox();
             btnRefresh = new Button();
-            btnDelete = new Button();
             pnlHeader = new Panel();
             lblPageDescription = new Label();
             lblPageTitle = new Label();
             statusStrip = new StatusStrip();
             lblStatus = new ToolStripStatusLabel();
             pnlSidebar.SuspendLayout();
+            pnlGhostStatus.SuspendLayout();
             pnlMain.SuspendLayout();
             pnlContent.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)dgvDrivers).BeginInit();
@@ -251,7 +250,6 @@ namespace Driver_Manager_Windows_10_11
             btnPrinterPorts.Text = "Printer Ports";
             btnPrinterPorts.TextAlign = ContentAlignment.MiddleLeft;
             btnPrinterPorts.UseVisualStyleBackColor = false;
-
             // 
             // btnPrinters
             // 
@@ -269,7 +267,7 @@ namespace Driver_Manager_Windows_10_11
             btnPrinters.Text = "Printers (IPP / Vendor)";
             btnPrinters.TextAlign = ContentAlignment.MiddleLeft;
             btnPrinters.UseVisualStyleBackColor = false;
-
+            btnPrinters.Click += btnPrinters_Click_1;
             // 
             // btnGhostPrinter
             // 
@@ -284,10 +282,58 @@ namespace Driver_Manager_Windows_10_11
             btnGhostPrinter.Padding = new Padding(12, 0, 0, 0);
             btnGhostPrinter.Size = new Size(221, 44);
             btnGhostPrinter.TabIndex = 8;
-            btnGhostPrinter.Text = "Print Server";
+            btnGhostPrinter.Text = "Devices and Printers";
             btnGhostPrinter.TextAlign = ContentAlignment.MiddleLeft;
             btnGhostPrinter.UseVisualStyleBackColor = false;
             btnGhostPrinter.Click += btnGhostPrinter_Click;
+            // 
+            // pnlGhostStatus
+            // 
+            pnlGhostStatus.BackColor = Color.White;
+            pnlGhostStatus.Controls.Add(lblGhostStatusDescription);
+            pnlGhostStatus.Controls.Add(lblGhostStatusTitle);
+            pnlGhostStatus.Controls.Add(lblGhostStatusIcon);
+            pnlGhostStatus.Location = new Point(25, 68);
+            pnlGhostStatus.Name = "pnlGhostStatus";
+            pnlGhostStatus.Size = new Size(1089, 569);
+            pnlGhostStatus.TabIndex = 2;
+            pnlGhostStatus.Visible = false;
+            // 
+            // lblGhostStatusDescription
+            // 
+            lblGhostStatusDescription.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            lblGhostStatusDescription.Font = new Font("Segoe UI", 9.5F);
+            lblGhostStatusDescription.ForeColor = Color.FromArgb(100, 116, 139);
+            lblGhostStatusDescription.Location = new Point(20, 251);
+            lblGhostStatusDescription.Name = "lblGhostStatusDescription";
+            lblGhostStatusDescription.Size = new Size(1938, 24);
+            lblGhostStatusDescription.TabIndex = 2;
+            lblGhostStatusDescription.Text = "Enter a Print Server name and scan its printer queues.";
+            lblGhostStatusDescription.TextAlign = ContentAlignment.MiddleCenter;
+            // 
+            // lblGhostStatusTitle
+            // 
+            lblGhostStatusTitle.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            lblGhostStatusTitle.Font = new Font("Segoe UI Semibold", 13F, FontStyle.Bold);
+            lblGhostStatusTitle.ForeColor = Color.FromArgb(51, 65, 85);
+            lblGhostStatusTitle.Location = new Point(20, 214);
+            lblGhostStatusTitle.Name = "lblGhostStatusTitle";
+            lblGhostStatusTitle.Size = new Size(1938, 30);
+            lblGhostStatusTitle.TabIndex = 1;
+            lblGhostStatusTitle.Text = "No Printers Found";
+            lblGhostStatusTitle.TextAlign = ContentAlignment.MiddleCenter;
+            // 
+            // lblGhostStatusIcon
+            // 
+            lblGhostStatusIcon.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            lblGhostStatusIcon.Font = new Font("Segoe UI Symbol", 30F);
+            lblGhostStatusIcon.ForeColor = Color.FromArgb(148, 163, 184);
+            lblGhostStatusIcon.Location = new Point(20, 145);
+            lblGhostStatusIcon.Name = "lblGhostStatusIcon";
+            lblGhostStatusIcon.Size = new Size(1938, 55);
+            lblGhostStatusIcon.TabIndex = 0;
+            lblGhostStatusIcon.Text = "▣";
+            lblGhostStatusIcon.TextAlign = ContentAlignment.MiddleCenter;
             // 
             // pnlMain
             // 
@@ -394,81 +440,6 @@ namespace Driver_Manager_Windows_10_11
             colSigned.Name = "colSigned";
             colSigned.ReadOnly = true;
             // 
-            // pnlGhostStatus
-            // 
-            pnlGhostStatus.BackColor = Color.White;
-            pnlGhostStatus.Controls.Add(lblGhostStatusDescription);
-            pnlGhostStatus.Controls.Add(lblGhostStatusTitle);
-            pnlGhostStatus.Controls.Add(lblGhostStatusIcon);
-            pnlGhostStatus.Location = new Point(25, 68);
-            pnlGhostStatus.Name = "pnlGhostStatus";
-            pnlGhostStatus.Size = new Size(1089, 569);
-            pnlGhostStatus.TabIndex = 2;
-            pnlGhostStatus.Visible = false;
-
-            // 
-            // lblGhostStatusIcon
-            // 
-            lblGhostStatusIcon.Anchor =
-                AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            lblGhostStatusIcon.Font =
-                new Font("Segoe UI Symbol", 30F);
-            lblGhostStatusIcon.ForeColor =
-                Color.FromArgb(148, 163, 184);
-            lblGhostStatusIcon.Location =
-                new Point(20, 145);
-            lblGhostStatusIcon.Name =
-                "lblGhostStatusIcon";
-            lblGhostStatusIcon.Size =
-                new Size(1049, 55);
-            lblGhostStatusIcon.TabIndex = 0;
-            lblGhostStatusIcon.Text = "▣";
-            lblGhostStatusIcon.TextAlign =
-                ContentAlignment.MiddleCenter;
-
-            // 
-            // lblGhostStatusTitle
-            // 
-            lblGhostStatusTitle.Anchor =
-                AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            lblGhostStatusTitle.Font =
-                new Font("Segoe UI Semibold", 13F, FontStyle.Bold);
-            lblGhostStatusTitle.ForeColor =
-                Color.FromArgb(51, 65, 85);
-            lblGhostStatusTitle.Location =
-                new Point(20, 214);
-            lblGhostStatusTitle.Name =
-                "lblGhostStatusTitle";
-            lblGhostStatusTitle.Size =
-                new Size(1049, 30);
-            lblGhostStatusTitle.TabIndex = 1;
-            lblGhostStatusTitle.Text =
-                "No Printers Found";
-            lblGhostStatusTitle.TextAlign =
-                ContentAlignment.MiddleCenter;
-
-            // 
-            // lblGhostStatusDescription
-            // 
-            lblGhostStatusDescription.Anchor =
-                AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            lblGhostStatusDescription.Font =
-                new Font("Segoe UI", 9.5F);
-            lblGhostStatusDescription.ForeColor =
-                Color.FromArgb(100, 116, 139);
-            lblGhostStatusDescription.Location =
-                new Point(20, 251);
-            lblGhostStatusDescription.Name =
-                "lblGhostStatusDescription";
-            lblGhostStatusDescription.Size =
-                new Size(1049, 24);
-            lblGhostStatusDescription.TabIndex = 2;
-            lblGhostStatusDescription.Text =
-                "Enter a Print Server name and scan its printer queues.";
-            lblGhostStatusDescription.TextAlign =
-                ContentAlignment.MiddleCenter;
-
-            // 
             // pnlToolbar
             // 
             pnlToolbar.BackColor = Color.FromArgb(248, 250, 252);
@@ -480,6 +451,22 @@ namespace Driver_Manager_Windows_10_11
             pnlToolbar.Name = "pnlToolbar";
             pnlToolbar.Size = new Size(1089, 50);
             pnlToolbar.TabIndex = 0;
+            // 
+            // btnDelete
+            // 
+            btnDelete.BackColor = Color.FromArgb(220, 38, 38);
+            btnDelete.Cursor = Cursors.Hand;
+            btnDelete.Enabled = false;
+            btnDelete.FlatAppearance.BorderSize = 0;
+            btnDelete.FlatStyle = FlatStyle.Flat;
+            btnDelete.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Bold);
+            btnDelete.ForeColor = Color.White;
+            btnDelete.Location = new Point(520, 4);
+            btnDelete.Name = "btnDelete";
+            btnDelete.Size = new Size(105, 32);
+            btnDelete.TabIndex = 2;
+            btnDelete.Text = "Delete";
+            btnDelete.UseVisualStyleBackColor = false;
             // 
             // txtSearch
             // 
@@ -507,22 +494,6 @@ namespace Driver_Manager_Windows_10_11
             btnRefresh.Text = "Refresh";
             btnRefresh.UseVisualStyleBackColor = false;
             btnRefresh.Click += btnRefresh_Click;
-            // 
-            // btnDelete
-            // 
-            btnDelete.BackColor = Color.FromArgb(220, 38, 38);
-            btnDelete.Cursor = Cursors.Hand;
-            btnDelete.FlatAppearance.BorderSize = 0;
-            btnDelete.FlatStyle = FlatStyle.Flat;
-            btnDelete.Font = new Font("Segoe UI Semibold", 9F, FontStyle.Bold);
-            btnDelete.ForeColor = Color.White;
-            btnDelete.Location = new Point(520, 4);
-            btnDelete.Name = "btnDelete";
-            btnDelete.Size = new Size(105, 32);
-            btnDelete.TabIndex = 2;
-            btnDelete.Text = "Delete";
-            btnDelete.UseVisualStyleBackColor = false;
-            btnDelete.Enabled = false;
             // 
             // pnlHeader
             // 
@@ -590,6 +561,7 @@ namespace Driver_Manager_Windows_10_11
             Text = "Driver Manager - Windows 10 / 11";
             pnlSidebar.ResumeLayout(false);
             pnlSidebar.PerformLayout();
+            pnlGhostStatus.ResumeLayout(false);
             pnlMain.ResumeLayout(false);
             pnlContent.ResumeLayout(false);
             ((System.ComponentModel.ISupportInitialize)dgvDrivers).EndInit();

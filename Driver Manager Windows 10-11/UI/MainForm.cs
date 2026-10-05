@@ -205,7 +205,7 @@ namespace Driver_Manager_Windows_10_11
             SetActiveButton(btnPrinterDrivers);
 
             lblPageTitle.Text =
-                "Printer Drivers";
+                "Devices and Printers";
 
             lblPageDescription.Text =
                 "View installed printer drivers";
@@ -277,7 +277,7 @@ namespace Driver_Manager_Windows_10_11
             SetActiveButton(btnPrinters);
 
             lblPageTitle.Text =
-                "Printers";
+                "Printers IPP / VENDOR";
 
             lblPageDescription.Text =
                 "View installed printers, IPP and vendor information";
@@ -320,7 +320,7 @@ namespace Driver_Manager_Windows_10_11
             SetActiveButton(btnGhostPrinter);
 
             lblPageTitle.Text =
-                "Devices & Printers";
+                "Devices and Printers";
 
             lblPageDescription.Text =
                 "View all items shown by Windows Devices and Printers";
@@ -2125,5 +2125,9 @@ namespace Driver_Manager_Windows_10_11
                 Color.White;
         }
 
+        private void btnPrinters_Click_1(object sender, EventArgs e)
+        {
+
+        }
     }
 }
