@@ -237,7 +237,6 @@ namespace Driver_Manager_Windows_10_11.Services
 
         // =========================================================
         // DEVICES & PRINTERS
-        // Windows Devices & Printers -> Remove device
         // =========================================================
         public static bool DeleteDevicesAndPrintersPrinter(
             PrintServerPrinterModel printer,
@@ -251,8 +250,14 @@ namespace Driver_Manager_Windows_10_11.Services
                 return false;
             }
 
-            // Use the exact ShellPath of the selected row first.
-            // This follows the same Windows Devices & Printers item.
+            // =====================================================
+            // 1. PRIMARY:
+            //    Use the exact ShellPath of the selected row and
+            //    invoke Windows Devices & Printers -> Remove device.
+            //
+            //    This is important when multiple printers have
+            //    the same display name.
+            // =====================================================
             if (!string.IsNullOrWhiteSpace(printer.ShellPath))
             {
                 bool shellSuccess =
@@ -269,7 +274,10 @@ namespace Driver_Manager_Windows_10_11.Services
                 message = shellMessage;
             }
 
-            // Fallback: use the exact DeviceInstanceId.
+            // =====================================================
+            // 2. FALLBACK:
+            //    Use the exact DeviceInstanceId when available.
+            // =====================================================
             string deviceInstanceId =
                 printer.DeviceInstanceId?.Trim() ?? "";
 
@@ -293,14 +301,18 @@ namespace Driver_Manager_Windows_10_11.Services
                 }
 
                 message = string.IsNullOrWhiteSpace(output)
-                    ? "Windows ไม่สามารถ Remove device ได้"
-                    : "Windows ไม่สามารถ Remove device ได้\n\n" +
-                      "รายละเอียดจาก Windows:\n" +
-                      output.Trim();
+                    ? "Windows ไม่สามารถลบ Printer Device ที่เลือกได้"
+                    : "Windows ไม่สามารถลบ Printer Device ที่เลือกได้\n\n" +
+                      "รายละเอียดจาก Windows:\n" + output.Trim();
 
                 return false;
             }
 
+            // =====================================================
+            // 3. SAFETY:
+            //    Do NOT fall back to Remove-Printer by name here.
+            //    A duplicate printer name can remove the wrong queue.
+            // =====================================================
             if (string.IsNullOrWhiteSpace(message))
             {
                 message =
@@ -377,7 +389,9 @@ namespace Driver_Manager_Windows_10_11.Services
                 int count =
                     Convert.ToInt32(items.Count);
 
-                // Find the exact Shell item using ShellPath.
+                // -------------------------------------------------
+                // Find the exact Shell item by ShellPath.
+                // -------------------------------------------------
                 for (int i = 0; i < count; i++)
                 {
                     dynamic? item = null;
@@ -393,8 +407,8 @@ namespace Driver_Manager_Windows_10_11.Services
                             SafeDynamicString(item.Path);
 
                         if (itemPath.Equals(
-                                shellPath.Trim(),
-                                StringComparison.OrdinalIgnoreCase))
+                            shellPath.Trim(),
+                            StringComparison.OrdinalIgnoreCase))
                         {
                             selectedItem = item;
                             item = null;
@@ -403,6 +417,7 @@ namespace Driver_Manager_Windows_10_11.Services
                     }
                     catch
                     {
+                        // Continue with the next Shell item.
                     }
                     finally
                     {
@@ -420,12 +435,15 @@ namespace Driver_Manager_Windows_10_11.Services
                     return false;
                 }
 
-                // Look for the actual Remove device verb.
+                // -------------------------------------------------
+                // Find the Windows Shell context-menu verb.
+                // -------------------------------------------------
                 dynamic? verbs = null;
 
                 try
                 {
-                    verbs = selectedItem.Verbs();
+                    verbs =
+                        selectedItem.Verbs();
 
                     int verbCount =
                         Convert.ToInt32(verbs.Count);
@@ -436,7 +454,8 @@ namespace Driver_Manager_Windows_10_11.Services
 
                         try
                         {
-                            verb = verbs.Item(i);
+                            verb =
+                                verbs.Item(i);
 
                             if (verb == null)
                                 continue;
@@ -447,15 +466,34 @@ namespace Driver_Manager_Windows_10_11.Services
                             if (!IsRemoveDeviceVerb(verbName))
                                 continue;
 
+                            // This opens the real Windows:
+                            // "Remove Device" confirmation dialog.
                             verb.DoIt();
 
-                            Thread.Sleep(1500);
+                            // IMPORTANT:
+                            // Do not report success immediately.
+                            // Windows asks the user Yes / No first.
+                            //
+                            // Wait until the exact Shell item disappears.
+                            // If the user presses No/cancels, it remains.
+                            bool removed =
+                                WaitForShellItemToDisappear(
+                                    shellPath,
+                                    30000);
+
+                            if (removed)
+                            {
+                                message =
+                                    "ลบ Printer Device ออกจาก Windows Devices & Printers เรียบร้อยแล้ว\n" +
+                                    "Driver Store ไม่ถูกลบ";
+
+                                return true;
+                            }
 
                             message =
-                                "ลบ Printer Device ออกจาก Windows Devices & Printers เรียบร้อยแล้ว\n" +
-                                "Driver Store ไม่ถูกลบ";
+                                "การลบถูกยกเลิก หรือ Windows ยังไม่ได้ลบ Device";
 
-                            return true;
+                            return false;
                         }
                         catch
                         {
@@ -472,18 +510,27 @@ namespace Driver_Manager_Windows_10_11.Services
                     ReleaseComObject(verbs);
                 }
 
-                // Fallback to the canonical Shell verb.
+                // -------------------------------------------------
+                // Fallback:
+                // canonical Shell verb name.
+                // -------------------------------------------------
                 try
                 {
                     selectedItem.InvokeVerb("remove");
 
-                    Thread.Sleep(1500);
+                    bool removed =
+                        WaitForShellItemToDisappear(
+                            shellPath,
+                            30000);
 
-                    message =
-                        "ลบ Printer Device ออกจาก Windows Devices & Printers เรียบร้อยแล้ว\n" +
-                        "Driver Store ไม่ถูกลบ";
+                    if (removed)
+                    {
+                        message =
+                            "ลบ Printer Device ออกจาก Windows Devices & Printers เรียบร้อยแล้ว\n" +
+                            "Driver Store ไม่ถูกลบ";
 
-                    return true;
+                        return true;
+                    }
                 }
                 catch
                 {
@@ -512,6 +559,118 @@ namespace Driver_Manager_Windows_10_11.Services
         }
 
         // =========================================================
+        // WAIT UNTIL THE EXACT SHELL ITEM DISAPPEARS
+        // =========================================================
+        private static bool WaitForShellItemToDisappear(
+            string shellPath,
+            int timeoutMilliseconds)
+        {
+            DateTime start =
+                DateTime.UtcNow;
+
+            while (
+                (DateTime.UtcNow - start).TotalMilliseconds
+                < timeoutMilliseconds)
+            {
+                if (!ShellItemExists(shellPath))
+                    return true;
+
+                Thread.Sleep(500);
+            }
+
+            return !ShellItemExists(shellPath);
+        }
+
+        // =========================================================
+        // CHECK WHETHER THE EXACT SHELL ITEM STILL EXISTS
+        // =========================================================
+        private static bool ShellItemExists(
+            string shellPath)
+        {
+            const string devicesAndPrintersNamespace =
+                "::{26EE0668-A00A-44D7-9371-BEB064C98683}\\2\\::{A8A91A66-3A7D-4424-8D24-04E180695C7A}";
+
+            object? shellObject = null;
+            dynamic? shell = null;
+            dynamic? folder = null;
+            dynamic? items = null;
+
+            try
+            {
+                Type? shellType =
+                    Type.GetTypeFromProgID(
+                        "Shell.Application");
+
+                if (shellType == null)
+                    return true;
+
+                shellObject =
+                    Activator.CreateInstance(shellType);
+
+                if (shellObject == null)
+                    return true;
+
+                shell = shellObject;
+
+                folder =
+                    shell.NameSpace(
+                        devicesAndPrintersNamespace);
+
+                if (folder == null)
+                    return true;
+
+                items = folder.Items();
+
+                int count =
+                    Convert.ToInt32(items.Count);
+
+                for (int i = 0; i < count; i++)
+                {
+                    dynamic? item = null;
+
+                    try
+                    {
+                        item = items.Item(i);
+
+                        if (item == null)
+                            continue;
+
+                        string itemPath =
+                            SafeDynamicString(item.Path);
+
+                        if (itemPath.Equals(
+                            shellPath.Trim(),
+                            StringComparison.OrdinalIgnoreCase))
+                        {
+                            return true;
+                        }
+                    }
+                    catch
+                    {
+                    }
+                    finally
+                    {
+                        ReleaseComObject(item);
+                    }
+                }
+
+                return false;
+            }
+            catch
+            {
+                // If the Shell inventory cannot be checked,
+                // do not claim that the device disappeared.
+                return true;
+            }
+            finally
+            {
+                ReleaseComObject(items);
+                ReleaseComObject(folder);
+                ReleaseComObject(shell);
+            }
+        }
+
+        // =========================================================
         // CHECK REMOVE DEVICE VERB
         // =========================================================
         private static bool IsRemoveDeviceVerb(
@@ -527,6 +686,7 @@ namespace Driver_Manager_Windows_10_11.Services
                     .Trim()
                     .ToLowerInvariant();
 
+            // English Windows
             if (text.Contains("remove device"))
                 return true;
 
@@ -536,6 +696,7 @@ namespace Driver_Manager_Windows_10_11.Services
             if (text.Contains("remove"))
                 return true;
 
+            // Thai Windows
             if (text.Contains("ลบอุปกรณ์"))
                 return true;
 
