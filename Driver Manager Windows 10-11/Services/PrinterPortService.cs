@@ -26,8 +26,6 @@ namespace Driver_Manager_Windows_10_11.Services
             const string script = @"
 $ErrorActionPreference = 'Stop'
 
-# Force PowerShell output to UTF-8 so Thai / Unicode descriptions
-# are transferred to the C# application without mojibake.
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 [Console]::OutputEncoding = $utf8
 $OutputEncoding = $utf8
@@ -57,9 +55,6 @@ else {
                 CreateNoWindow = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
-
-                // IMPORTANT:
-                // PowerShell is forced to UTF-8 above, so C# must read UTF-8 too.
                 StandardOutputEncoding = new UTF8Encoding(false),
                 StandardErrorEncoding = new UTF8Encoding(false)
             };
@@ -93,7 +88,6 @@ else {
                 }
                 catch
                 {
-                    // Ignore cleanup errors.
                 }
 
                 throw new Exception(
@@ -156,14 +150,20 @@ else {
             JsonElement item,
             List<PrinterPortModel> result)
         {
-            string name = GetString(item, "Name");
-            string description = GetString(item, "Description");
-            string portMonitor = GetString(item, "PortMonitor");
+            string name =
+                GetString(item, "Name");
 
-            // Keep the UI English-first. If Windows returns a localized
-            // description, use a readable English description derived from
-            // the port monitor instead of showing broken/localized text.
-            description = GetEnglishDescription(name, description, portMonitor);
+            string description =
+                GetString(item, "Description");
+
+            string portMonitor =
+                GetString(item, "PortMonitor");
+
+            description =
+                GetEnglishDescription(
+                    name,
+                    description,
+                    portMonitor);
 
             result.Add(
                 new PrinterPortModel
@@ -172,11 +172,16 @@ else {
                     Description = description,
                     PrinterHostAddress =
                         GetString(item, "PrinterHostAddress"),
-                    PortNumber = GetString(item, "PortNumber"),
-                    Protocol = GetString(item, "Protocol"),
-                    SNMPEnabled = GetString(item, "SNMPEnabled"),
-                    ComputerName = GetString(item, "ComputerName"),
-                    PortMonitor = portMonitor
+                    PortNumber =
+                        GetString(item, "PortNumber"),
+                    Protocol =
+                        GetString(item, "Protocol"),
+                    SNMPEnabled =
+                        GetString(item, "SNMPEnabled"),
+                    ComputerName =
+                        GetString(item, "ComputerName"),
+                    PortMonitor =
+                        portMonitor
                 });
         }
 
@@ -185,30 +190,48 @@ else {
             string originalDescription,
             string portMonitor)
         {
-            string monitor = portMonitor.Trim();
+            string monitor =
+                portMonitor.Trim();
 
-            if (monitor.Equals("Local Monitor", StringComparison.OrdinalIgnoreCase))
+            if (monitor.Equals(
+                    "Local Monitor",
+                    StringComparison.OrdinalIgnoreCase))
+            {
                 return "Local Port";
+            }
 
-            if (monitor.IndexOf("TCP/IP", StringComparison.OrdinalIgnoreCase) >= 0)
+            if (monitor.IndexOf(
+                    "TCP/IP",
+                    StringComparison.OrdinalIgnoreCase) >= 0)
+            {
                 return "Standard TCP/IP Port";
+            }
 
-            if (monitor.IndexOf("WSD", StringComparison.OrdinalIgnoreCase) >= 0)
+            if (monitor.IndexOf(
+                    "WSD",
+                    StringComparison.OrdinalIgnoreCase) >= 0)
+            {
                 return "WSD Port";
+            }
 
-            if (monitor.IndexOf("IPP", StringComparison.OrdinalIgnoreCase) >= 0)
+            if (monitor.IndexOf(
+                    "IPP",
+                    StringComparison.OrdinalIgnoreCase) >= 0)
+            {
                 return "IPP Port";
+            }
 
-            // If the original text is present and contains no replacement
-            // characters, keep it. Otherwise use a safe English fallback.
-            if (!string.IsNullOrWhiteSpace(originalDescription) &&
+            if (!string.IsNullOrWhiteSpace(
+                    originalDescription) &&
                 !originalDescription.Contains('\uFFFD'))
             {
                 return originalDescription.Trim();
             }
 
             if (!string.IsNullOrWhiteSpace(monitor))
+            {
                 return monitor;
+            }
 
             return "Printer Port";
         }
