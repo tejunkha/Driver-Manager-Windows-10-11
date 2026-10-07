@@ -1792,8 +1792,8 @@ namespace Driver_Manager_Windows_10_11
                 else if (tag is PrinterPortModel printerPort)
                 {
                     success = await Task.Run(() =>
-                        PrinterPortActionService.DeletePrinterPort(
-                            printerPort,
+                        PrinterPortService.DeleteUsbPort(
+                            printerPort.Name,
                             out message));
                 }
                 else if (tag is InstalledPrinterModel installedPrinter)
