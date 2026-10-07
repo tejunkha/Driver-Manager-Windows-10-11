@@ -20,12 +20,26 @@ namespace Driver_Manager_Windows_10_11.Services
         {
             string json = RunPowerShell();
 
+            List<PrinterPortModel> result;
+
             if (string.IsNullOrWhiteSpace(json))
-                return new List<PrinterPortModel>();
+                result = new List<PrinterPortModel>();
+            else
+                result = ParseJson(json);
 
-            return ParseJson(json);
+            // Merge USB Monitor\UsbPortList.
+            // These entries may exist only in Registry and may no longer
+            // be returned by Get-PrinterPort.
+            MergeUsbRegistryPorts(result);
+
+            result.Sort((a, b) =>
+                string.Compare(
+                    a.Name,
+                    b.Name,
+                    StringComparison.OrdinalIgnoreCase));
+
+            return result;
         }
-
 
         // ============================================================
         // DELETE USB PRINTER PORT
@@ -45,7 +59,7 @@ namespace Driver_Manager_Windows_10_11.Services
 
             portName = portName.Trim();
 
-            // Force delete is intentionally restricted to USB printer ports.
+            // Force delete is intentionally restricted to USB ports.
             if (!IsUsbPort(portName))
             {
                 message =
@@ -94,15 +108,14 @@ namespace Driver_Manager_Windows_10_11.Services
                 }
             }
 
+            // If the normal method fails (for example Win32 error 50),
+            // force-clean only the exact USB port entry from Print Monitor registry.
             bool registryDelete = false;
-            bool usbMonitorDelete = false;
             string registryMessage = "";
-            string usbMonitorMessage = "";
             bool spoolerStopped = false;
 
             try
             {
-                // Stop Print Spooler before touching Print Monitor registry data.
                 if (!StopSpooler(out string stopError))
                 {
                     message =
@@ -114,41 +127,36 @@ namespace Driver_Manager_Windows_10_11.Services
 
                 spoolerStopped = true;
 
-                // Existing cleanup: ...\Print\Monitors\...\Ports\USBxxx
-                registryDelete =
-                    ForceRemoveUsbPortRegistry(
-                        portName,
-                        out registryMessage);
+                registryDelete = ForceRemoveUsbPortRegistry(
+                    portName,
+                    out registryMessage);
 
-                // Confirmed by testing on the user's machine:
-                // USB Monitor stores the port in UserPortList as well.
-                usbMonitorDelete =
+
+                bool usbMonitorDelete =
                     RemoveUsbMonitorUserPort(
                         portName,
-                        out usbMonitorMessage);
+                        out string usbMonitorMessage);
 
                 if (!StartSpooler(out string startError))
                 {
                     message =
-                        "The USB Port registry cleanup completed, " +
-                        "but Print Spooler could not be started again.\n\n" +
+                        "The USB Port registry cleanup completed, but Print Spooler could not be started again.\n\n" +
                         startError;
 
                     return false;
                 }
 
                 spoolerStopped = false;
-
                 Thread.Sleep(1500);
 
-                // Port no longer exists in PrintManagement.
+                // Verify the actual Windows Printer Port list.
                 if (!PortExists(portName))
                 {
                     message =
                         $"USB Printer Port '{portName}' was removed successfully.\n\n" +
                         $"Normal Remove: {(normalDelete ? "Success" : "Failed")}\n" +
-                        $"Print Monitor Registry: {(registryDelete ? "Success" : "Not found")}\n" +
-                        $"USB Monitor UserPortList: {(usbMonitorDelete ? "Success" : "Not found")}\n" +
+                        $"Registry Cleanup: {(registryDelete ? "Success" : "Not found")}\n" +
+                        $"USB Monitor UsbPortList: {(usbMonitorDelete ? "Success" : "Not found")}\n" +
                         "Print Spooler restarted.";
 
                     return true;
@@ -161,9 +169,7 @@ namespace Driver_Manager_Windows_10_11.Services
                 if (finalDelete && !PortExists(portName))
                 {
                     message =
-                        $"USB Printer Port '{portName}' was removed successfully.\n\n" +
-                        $"Print Monitor Registry: {(registryDelete ? "Success" : "Not found")}\n" +
-                        $"USB Monitor UserPortList: {(usbMonitorDelete ? "Success" : "Not found")}";
+                        $"USB Printer Port '{portName}' was removed successfully.";
 
                     return true;
                 }
@@ -171,13 +177,10 @@ namespace Driver_Manager_Windows_10_11.Services
                 message =
                     $"Windows still reports USB Printer Port '{portName}'.\n\n" +
                     $"Normal Remove: {(normalDelete || finalDelete ? "Tried" : "Failed")}\n" +
-                    $"Print Monitor Registry: {(registryDelete ? "Success" : "Not found")}\n" +
-                    $"USB Monitor UserPortList: {(usbMonitorDelete ? "Success" : "Not found")}\n\n" +
-                    (string.IsNullOrWhiteSpace(usbMonitorMessage)
-                        ? (string.IsNullOrWhiteSpace(registryMessage)
-                            ? "The USB Port may be recreated by its Port Monitor or printer driver."
-                            : registryMessage)
-                        : usbMonitorMessage);
+                    $"Registry Cleanup: {(registryDelete ? "Success" : "Not found")}\n\n" +
+                    (string.IsNullOrWhiteSpace(registryMessage)
+                        ? "The USB Port may be recreated by its Port Monitor or printer driver."
+                        : registryMessage);
 
                 return false;
             }
@@ -190,6 +193,258 @@ namespace Driver_Manager_Windows_10_11.Services
                 }
             }
         }
+
+        // ============================================================
+        // MERGE USB MONITOR REGISTRY PORTS
+        // ============================================================
+
+        private static void MergeUsbRegistryPorts(
+            List<PrinterPortModel> result)
+        {
+            List<PrinterPortModel> registryPorts =
+                GetUsbRegistryPorts();
+
+            if (registryPorts.Count == 0)
+                return;
+
+            var existing =
+                new HashSet<string>(
+                    StringComparer.OrdinalIgnoreCase);
+
+            foreach (PrinterPortModel port in result)
+            {
+                if (!string.IsNullOrWhiteSpace(port.Name))
+                    existing.Add(port.Name.Trim());
+            }
+
+            foreach (PrinterPortModel registryPort in registryPorts)
+            {
+                string name =
+                    registryPort.Name?.Trim() ?? "";
+
+                if (string.IsNullOrWhiteSpace(name))
+                    continue;
+
+                if (existing.Contains(name))
+                    continue;
+
+                result.Add(registryPort);
+                existing.Add(name);
+            }
+        }
+
+
+        // ============================================================
+        // READ USB MONITOR\USBPORTLIST
+        // ============================================================
+
+        private static List<PrinterPortModel> GetUsbRegistryPorts()
+        {
+            var result =
+                new List<PrinterPortModel>();
+
+            const string script = @"
+$ErrorActionPreference = 'SilentlyContinue'
+
+$path =
+    'HKLM:\SYSTEM\CurrentControlSet\Control\Print\Monitors\USB Monitor\UsbPortList'
+
+if (-not (Test-Path $path))
+{
+    Write-Output '[]'
+    exit 0
+}
+
+$key =
+    Get-Item -Path $path -ErrorAction SilentlyContinue
+
+if ($null -eq $key)
+{
+    Write-Output '[]'
+    exit 0
+}
+
+$items = @(
+    foreach ($name in $key.GetValueNames())
+    {
+        if ($name -match '^USB\d+$')
+        {
+            [PSCustomObject]@{
+                Name = $name
+            }
+        }
+    }
+)
+
+if ($items.Count -eq 0)
+{
+    Write-Output '[]'
+}
+else
+{
+    $items | ConvertTo-Json -Compress
+}
+";
+
+            string output =
+                RunPowerShellCommand(
+                    script,
+                    out _);
+
+            if (string.IsNullOrWhiteSpace(output))
+                return result;
+
+            try
+            {
+                using JsonDocument document =
+                    JsonDocument.Parse(output);
+
+                JsonElement root =
+                    document.RootElement;
+
+                if (root.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (JsonElement item in root.EnumerateArray())
+                    {
+                        string name =
+                            GetString(item, "Name");
+
+                        if (!string.IsNullOrWhiteSpace(name))
+                        {
+                            result.Add(
+                                CreateRegistryOnlyPort(name));
+                        }
+                    }
+                }
+                else if (root.ValueKind == JsonValueKind.Object)
+                {
+                    string name =
+                        GetString(root, "Name");
+
+                    if (!string.IsNullOrWhiteSpace(name))
+                    {
+                        result.Add(
+                            CreateRegistryOnlyPort(name));
+                    }
+                }
+            }
+            catch (JsonException)
+            {
+                // Keep normal Windows Printer Port results if the
+                // Registry data cannot be parsed.
+            }
+
+            return result;
+        }
+
+
+        // ============================================================
+        // CREATE REGISTRY-ONLY PORT MODEL
+        // ============================================================
+
+        private static PrinterPortModel CreateRegistryOnlyPort(
+            string name)
+        {
+            return new PrinterPortModel
+            {
+                Name = name,
+                Description = "USB Port (Registry Only)",
+                PrinterHostAddress = "",
+                PortNumber = "",
+                Protocol = "",
+                SNMPEnabled = "",
+                ComputerName = "Registry Only",
+                PortMonitor = "USB Monitor"
+            };
+        }
+
+
+        // ============================================================
+        // REMOVE USB MONITOR\USBPORTLIST VALUE
+        // ============================================================
+
+        private static bool RemoveUsbMonitorUserPort(
+            string portName,
+            out string message)
+        {
+            message = "";
+
+            string script = $@"
+$ErrorActionPreference = 'Stop'
+
+$portName = '{EscapePowerShell(portName)}'
+
+$path =
+    'HKLM:\SYSTEM\CurrentControlSet\Control\Print\Monitors\USB Monitor\UsbPortList'
+
+if (-not (Test-Path $path))
+{{
+    Write-Output 'NOT_FOUND'
+    exit 0
+}}
+
+$key =
+    Get-Item -Path $path -ErrorAction Stop
+
+$found = $false
+
+foreach ($valueName in $key.GetValueNames())
+{{
+    if ($valueName -ieq $portName)
+    {{
+        Remove-ItemProperty `
+            -Path $path `
+            -Name $valueName `
+            -Force `
+            -ErrorAction Stop
+
+        $found = $true
+    }}
+}}
+
+if ($found)
+{{
+    Write-Output 'REMOVED'
+}}
+else
+{{
+    Write-Output 'NOT_FOUND'
+}}
+";
+
+            string output =
+                RunPowerShellCommand(
+                    script,
+                    out string error);
+
+            if (output.Contains(
+                "REMOVED",
+                StringComparison.OrdinalIgnoreCase))
+            {
+                message =
+                    $"USB Monitor UsbPortList entry '{portName}' was removed.";
+
+                return true;
+            }
+
+            if (output.Contains(
+                "NOT_FOUND",
+                StringComparison.OrdinalIgnoreCase))
+            {
+                message =
+                    $"USB Monitor UsbPortList entry '{portName}' was not found.";
+
+                return false;
+            }
+
+            message =
+                string.IsNullOrWhiteSpace(error)
+                    ? $"Unable to remove USB Monitor UsbPortList entry '{portName}'."
+                    : error.Trim();
+
+            return false;
+        }
+
 
         // ============================================================
         // CHECK USB PORT
@@ -463,92 +718,6 @@ else
             message =
                 string.IsNullOrWhiteSpace(error)
                     ? $"Registry entry for '{portName}' was not found."
-                    : error.Trim();
-
-            return false;
-        }
-
-        // ============================================================
-        // FORCE REMOVE USB MONITOR USERPORTLIST ENTRY
-        // ============================================================
-
-        private static bool RemoveUsbMonitorUserPort(
-            string portName,
-            out string message)
-        {
-            message = "";
-
-            string script = $@"
-$ErrorActionPreference = 'Stop'
-
-$portName = '{EscapePowerShell(portName)}'
-
-$path =
-    'HKLM:\SYSTEM\CurrentControlSet\Control\Print\Monitors\USB Monitor\UserPortList'
-
-if (-not (Test-Path $path))
-{{
-    Write-Output 'NOT_FOUND'
-    exit 0
-}}
-
-$key =
-    Get-Item -Path $path -ErrorAction Stop
-
-$found = $false
-
-foreach ($valueName in $key.GetValueNames())
-{{
-    if ($valueName -ieq $portName)
-    {{
-        Remove-ItemProperty `
-            -Path $path `
-            -Name $valueName `
-            -Force `
-            -ErrorAction Stop
-
-        $found = $true
-    }}
-}}
-
-if ($found)
-{{
-    Write-Output 'REMOVED'
-}}
-else
-{{
-    Write-Output 'NOT_FOUND'
-}}
-";
-
-            string output =
-                RunPowerShellCommand(
-                    script,
-                    out string error);
-
-            if (output.Contains(
-                "REMOVED",
-                StringComparison.OrdinalIgnoreCase))
-            {
-                message =
-                    $"USB Monitor UserPortList entry '{portName}' was removed.";
-
-                return true;
-            }
-
-            if (output.Contains(
-                "NOT_FOUND",
-                StringComparison.OrdinalIgnoreCase))
-            {
-                message =
-                    $"USB Monitor UserPortList entry '{portName}' was not found.";
-
-                return false;
-            }
-
-            message =
-                string.IsNullOrWhiteSpace(error)
-                    ? $"Unable to remove USB Monitor UserPortList entry '{portName}'."
                     : error.Trim();
 
             return false;
