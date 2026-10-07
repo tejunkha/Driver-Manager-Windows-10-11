@@ -153,11 +153,15 @@ namespace Driver_Manager_Windows_10_11.Services
                 if (!PortExists(portName))
                 {
                     message =
-                        $"ลบ USB Printer Port '{portName}' สำเร็จแล้ว\n\n" +
-                        $"ลบแบบปกติ: {(normalDelete ? "สำเร็จ" : "ไม่พบใน Windows Printer Port")}\n" +
-                        $"ลบ Registry ของ Printer Port: {(registryDelete ? "สำเร็จ" : "ไม่พบ")}\n" +
-                        $"ลบ USB Monitor UsbPortList: {(usbMonitorDelete ? "สำเร็จ" : "ไม่พบ")}\n" +
-                        "Print Spooler: เริ่มการทำงานใหม่แล้ว";
+     "ลบ USB Printer Port สำเร็จ\n" +
+     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n" +
+     $"Port Name            : {portName}\n" +
+     $"ลบ Port ของ Windows  : {(normalDelete ? "สำเร็จ" : "ไม่พบ")}\n" +
+     $"ลบ Port Registry     : {(registryDelete ? "สำเร็จ" : "ไม่พบ")}\n" +
+     $"ลบ USB Monitor List  : {(usbMonitorDelete ? "สำเร็จ" : "ไม่พบ")}\n" +
+     $"Print Spooler        : ทำงานปกติ\n\n" +
+     "สถานะ: CLEAN\n" +
+     "USB Printer Port ถูกนำออกจากระบบแล้ว";
 
                     return true;
                 }
