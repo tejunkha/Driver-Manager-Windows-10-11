@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Drawing;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -978,7 +979,35 @@ namespace Driver_Manager_Windows_10_11
 
                 allInstalledPrinters =
                     await Task.Run(() =>
-                        InstalledPrinterService.GetPrinters());
+                    {
+                        // ---------------------------------------------
+                        // 1. Windows Printer Queue
+                        // ---------------------------------------------
+                        List<InstalledPrinterModel> printers =
+                            InstalledPrinterService.GetPrinters();
+
+                        // ---------------------------------------------
+                        // 2. Registry Only Printer
+                        // ---------------------------------------------
+                        List<InstalledPrinterModel> registryOnly =
+                            InstalledPrinterRegistryService
+                                .GetRegistryOnlyPrinters();
+
+                        // ---------------------------------------------
+                        // 3. รวมข้อมูล
+                        // Registry Only จะไม่ซ้ำกับ Windows Printer
+                        // เพราะ Registry Service ตรวจ Get-Printer ให้แล้ว
+                        // ---------------------------------------------
+                        printers.AddRange(registryOnly);
+
+                        printers.Sort((a, b) =>
+                            string.Compare(
+                                a.Name,
+                                b.Name,
+                                StringComparison.OrdinalIgnoreCase));
+
+                        return printers;
+                    });
 
                 dgvDrivers.Rows.Clear();
 
@@ -997,31 +1026,100 @@ namespace Driver_Manager_Windows_10_11
 
                     dgvDrivers.Rows[row].Tag = printer;
 
-                    string type = printer.PrinterType;
-                    if (type.Equals("IPP", StringComparison.OrdinalIgnoreCase) ||
-                        type.Equals("IPP (Microsoft)", StringComparison.OrdinalIgnoreCase))
+                    string type =
+                        printer.PrinterType ?? "";
+
+                    // ---------------------------------------------
+                    // IPP
+                    // ---------------------------------------------
+                    if (type.Equals(
+                            "IPP",
+                            StringComparison.OrdinalIgnoreCase) ||
+                        type.Equals(
+                            "IPP (Microsoft)",
+                            StringComparison.OrdinalIgnoreCase))
                     {
-                        dgvDrivers.Rows[row].Cells["colPrinterType"]
-                            .Style.ForeColor = Color.FromArgb(37, 99, 235);
+                        dgvDrivers.Rows[row]
+                            .Cells["colPrinterType"]
+                            .Style.ForeColor =
+                                Color.FromArgb(
+                                    37,
+                                    99,
+                                    235);
                     }
-                    else if (type.Equals("Vendor", StringComparison.OrdinalIgnoreCase))
+
+                    // ---------------------------------------------
+                    // Vendor
+                    // ---------------------------------------------
+                    else if (type.Equals(
+                        "Vendor",
+                        StringComparison.OrdinalIgnoreCase))
                     {
-                        dgvDrivers.Rows[row].Cells["colPrinterType"]
-                            .Style.ForeColor = Color.FromArgb(124, 58, 237);
+                        dgvDrivers.Rows[row]
+                            .Cells["colPrinterType"]
+                            .Style.ForeColor =
+                                Color.FromArgb(
+                                    124,
+                                    58,
+                                    237);
                     }
-                    else if (type.Equals("Offline", StringComparison.OrdinalIgnoreCase))
+
+                    // ---------------------------------------------
+                    // Registry Only
+                    // ---------------------------------------------
+                    else if (type.Equals(
+                        "Registry Only",
+                        StringComparison.OrdinalIgnoreCase))
                     {
-                        dgvDrivers.Rows[row].Cells["colStatus"]
-                            .Style.ForeColor = Color.FromArgb(220, 38, 38);
+                        dgvDrivers.Rows[row]
+                            .Cells["colPrinterType"]
+                            .Style.ForeColor =
+                                Color.FromArgb(
+                                    217,
+                                    119,
+                                    6);
+
+                        dgvDrivers.Rows[row]
+                            .Cells["colStatus"]
+                            .Style.ForeColor =
+                                Color.FromArgb(
+                                    217,
+                                    119,
+                                    6);
+                    }
+
+                    // ---------------------------------------------
+                    // Offline
+                    // ---------------------------------------------
+                    else if ((printer.Status ?? "").Equals(
+                        "Offline",
+                        StringComparison.OrdinalIgnoreCase))
+                    {
+                        dgvDrivers.Rows[row]
+                            .Cells["colStatus"]
+                            .Style.ForeColor =
+                                Color.FromArgb(
+                                    220,
+                                    38,
+                                    38);
                     }
                 }
 
+                int registryOnlyCount =
+                    allInstalledPrinters.Count(p =>
+                        (p.PrinterType ?? "").Equals(
+                            "Registry Only",
+                            StringComparison.OrdinalIgnoreCase));
+
                 lblStatus.Text =
-                    $"Printers    {allInstalledPrinters.Count} printers";
+                    $"Printers    {allInstalledPrinters.Count} printers" +
+                    $"    |    Registry Only: {registryOnlyCount}";
             }
             catch (Exception ex)
             {
-                ShowLocalError(ex, "Load Printers");
+                ShowLocalError(
+                    ex,
+                    "Load Printers");
 
                 lblStatus.Text =
                     "Failed to load installed printers";
